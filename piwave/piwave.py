@@ -78,7 +78,7 @@ class PiWave:
                 print(f"Error reading {path_file}: {e}")
                 os.remove(path_file)
         
-        search_paths = ["/home", "/bin", "/usr/local/bin", "/usr/bin", "/sbin", "/usr/sbin", "/"]
+        search_paths = ["/opt", "/home", "/bin", "/usr/local/bin", "/usr/bin", "/sbin", "/usr/sbin", "/"]
         found = False
         for directory in search_paths:
             if not os.path.isdir(directory):
