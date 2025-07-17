@@ -1,5 +1,5 @@
 <div align=center>
-![PiWave image](https://piwave.xyz/static/img/logo.png)
+<img alt="PiWave image" src="https://piwave.xyz/static/img/logo.png"/>
 <h1>PiWave</h1>
 </div>
 
