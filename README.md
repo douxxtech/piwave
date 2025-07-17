@@ -1,11 +1,7 @@
-# 📻 PiWave
-
 <div align=center>
-
 ![PiWave image](https://piwave.xyz/static/img/logo.png)
-
+<h1>PiWave</h1>
 </div>
-
 
 **PiWave** is a Python module designed to manage and control your Raspberry Pi radio using the `pi_fm_rds` utility. It allows you to easily convert audio files to WAV format and broadcast them at a specified frequency with RDS (Radio Data System) support.
 
@@ -16,9 +12,13 @@
 - Configurable broadcast frequency, PS (Program Service), RT (Radio Text), and PI (Program Identifier).
 - Supports looping of playback.
 - Detailed logging for debug mode.
+- Supports streaming from URLs.
+- Better error handling and event callbacks.
+- Non-blocking playback with threading.
+- Temporary file management for streamed content.
 
 > [!NOTE]
-> Are you looking for a minimal gui for PiWave?
+> Are you looking for a minimal GUI for PiWave?
 > Take a look at the [PiWave WebGUI](https://github.com/douxxtech/piwave-webgui)
 
 ## Hardware Installation
@@ -26,12 +26,12 @@
 To use PiWave for broadcasting, you need to set up the hardware correctly. This involves connecting an antenna or cable to the Raspberry Pi's GPIO pin.
 
 1. **Connect the Cable or Antenna**:
-    - Attach a cable or an antenna to GPIO 4 (Pin 7) on the Raspberry Pi.
-    - Ensure the connection is secure to avoid any broadcasting issues.
+   - Attach a cable or an antenna to GPIO 4 (Pin 7) on the Raspberry Pi.
+   - Ensure the connection is secure to avoid any broadcasting issues.
 
 2. **GPIO Pinout**:
-    - GPIO 4 (Pin 7) is used for the broadcasting signal.
-    - Ensure that the cable or antenna is properly connected to this pin for optimal performance.
+   - GPIO 4 (Pin 7) is used for the broadcasting signal.
+   - Ensure that the cable or antenna is properly connected to this pin for optimal performance.
 
 ## Installation
 
@@ -64,20 +64,21 @@ To install PiWave manually, follow these steps:
 
 1. **Clone the repository and install**:
 
-    ```bash
-    pip install git+https://github.com/douxxtech/piwave.git --break-system-packages
-    ```
+   ```bash
+   pip install git+https://github.com/douxxtech/piwave.git --break-system-packages
+   ```
 
 2. **Dependencies**:
 
-    PiWave requires the `ffmpeg` and `ffprobe` utilities for file conversion and duration extraction. Install them using:
+   PiWave requires the `ffmpeg` and `ffprobe` utilities for file conversion and duration extraction. Install them using:
 
-    ```bash
-    sudo apt-get install ffmpeg
-    ```
+   ```bash
+   sudo apt-get install ffmpeg
+   ```
+
 3. **PiFmRds**:
 
-   PiWave uses [PiFmRds](https://github.com/ChristopheJacquet/PiFmRds) to work. Make sure you have installed it before running PiWave
+   PiWave uses [PiFmRds](https://github.com/ChristopheJacquet/PiFmRds) to work. Make sure you have installed it before running PiWave.
 
 ## Usage
 
@@ -85,34 +86,70 @@ To install PiWave manually, follow these steps:
 
 1. **Importing the module**:
 
-    ```python
-    from piwave import PiWave
-    ```
+   ```python
+   from piwave import PiWave
+   ```
 
 2. **Creating an instance**:
 
-    ```python
-    piwave = PiWave(frequency=90.0, ps="MyRadio", rt="Playing great music", pi="ABCD", loop=True, debug=True)
-    ```
+   ```python
+   piwave = PiWave(
+       frequency=90.0,
+       ps="MyRadio",
+       rt="Playing great music",
+       pi="ABCD",
+       loop=True,
+       debug=True,
+       on_track_change=lambda file, index: print(f"Now playing: {file}"),
+       on_error=lambda error: print(f"Error occurred: {error}")
+   )
+   ```
 
-3. **Sending files for playback**:
+3. **Adding files to the playlist**:
 
-    ```python
-    files = ["path/to/your/audiofile.mp3"]
-    piwave.send(files)
-    ```
+   ```python
+   files = ["path/to/your/audiofile.mp3", "http://example.com/stream.mp3"]
+   piwave.add_files(files)
+   ```
 
-4. **Restarting playback**:
+4. **Starting playback**:
 
-    ```python
-    piwave.restart()
-    ```
+   ```python
+   piwave.play() # or files = ["path/to/your/audiofile.mp3", "http://example.com/stream.mp3"]; piwave.play(files)
+   ```
 
 5. **Stopping playback**:
 
-    ```python
-    piwave.stop()
-    ```
+   ```python
+   piwave.stop()
+   ```
+
+6. **Pausing and resuming playback**:
+
+   ```python
+   piwave.pause()
+   piwave.resume()
+   ```
+
+7. **Skipping tracks**:
+
+   ```python
+   piwave.next_track()
+   piwave.previous_track()
+   ```
+
+8. **Changing frequency**:
+
+   ```python
+   piwave.set_frequency(95.0)
+   ```
+
+9. **Getting status**:
+
+   ```python
+   status = piwave.get_status()
+   print(status)
+   ```
 
 ### Configuration
 
@@ -122,6 +159,8 @@ To install PiWave manually, follow these steps:
 - `pi`: Program Identifier (up to 4 characters, default: "FFFF").
 - `loop`: Whether to loop playback of files (default: False).
 - `debug`: Enable detailed debug logging (default: False).
+- `on_track_change`: Callback function when the track changes (default: None).
+- `on_error`: Callback function when an error occurs (default: None).
 
 ## Error Handling
 
@@ -140,4 +179,5 @@ Contributions are welcome! Please submit a pull request or open an issue on [Git
 ---
 
 Thank you for using PiWave!
+
 Made with <3 by Douxx
