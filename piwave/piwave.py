@@ -395,7 +395,7 @@ class PiWave:
     def _handle_interrupt(self, signum, frame):
         Log.warning("Interrupt received, stopping playback...")
         self.stop()
-        exit(0)
+        os._exit(0)
 
     def add_files(self, files: List[str]) -> bool:
         converted_files = []
