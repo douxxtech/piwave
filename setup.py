@@ -20,7 +20,6 @@ setup(
     extras_require={
         "dev": [
             "pytest>=6.0",
-            "pytest-asyncio>=0.18.0",
             "pytest-cov>=2.0",
             "black>=22.0",
             "flake8>=4.0",
