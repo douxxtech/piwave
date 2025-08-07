@@ -344,9 +344,10 @@ class PiWave:
             if self.on_track_change:
                 self.on_track_change(wav_file, self.current_index)
             
-            duration = self._get_file_duration(wav_file)
-            if duration > 0:
-                self.stop_event.wait(duration)
+            if not (self.loop and len(self.playlist) == 1):
+                duration = self._get_file_duration(wav_file)
+                if duration > 0:
+                    self.stop_event.wait(duration)
             
             return True
             
