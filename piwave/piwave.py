@@ -344,10 +344,9 @@ class PiWave:
             if self.on_track_change:
                 self.on_track_change(wav_file, self.current_index)
             
-            if not (self.loop and len(self.playlist) == 1):
-                duration = self._get_file_duration(wav_file)
-                if duration > 0:
-                    self.stop_event.wait(duration)
+            duration = self._get_file_duration(wav_file)
+            if duration > 0:
+                self.stop_event.wait(duration)
             
             return True
             
@@ -375,30 +374,26 @@ class PiWave:
 
     def _playback_worker(self):
         self._log_debug("Playback worker started")
-
+        
         while not self.stop_event.is_set() and not self.is_stopped:
             if self.current_index >= len(self.playlist):
                 if self.loop:
                     self.current_index = 0
                 else:
                     break
-
+            
             if self.current_index < len(self.playlist):
                 wav_file = self.playlist[self.current_index]
                 success = self._play_wav(wav_file)
-
+                
                 if not success and not self.stop_event.is_set():
                     Log.error(f"Failed to play {wav_file}")
-
-                # only stop the process if we are not looping a single file
-                if not (self.loop and len(self.playlist) == 1):
-                    self._stop_current_process()
-
+                
+                self._stop_current_process()
                 self.current_index += 1
-
+        
         self.is_playing = False
         self._log_debug("Playback worker finished")
-
 
     def _handle_interrupt(self, signum, frame):
         Log.warning("Interrupt received, stopping playback...")
