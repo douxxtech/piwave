@@ -115,9 +115,6 @@ class PiWave:
                  on_error: Optional[Callable] = None):
         
         self.debug = debug
-        
-        self._validate_environment()
-        
         self.frequency = frequency
         self.ps = str(ps)[:8]
         self.rt = str(rt)[:64]
@@ -140,6 +137,8 @@ class PiWave:
         self.stream_process: Optional[subprocess.Popen] = None
         
         self.pi_fm_rds_path = self._find_pi_fm_rds_path()
+        
+        self._validate_environment()
         
         signal.signal(signal.SIGINT, self._handle_interrupt)
         signal.signal(signal.SIGTERM, self._handle_interrupt)

@@ -4,7 +4,7 @@ from setuptools import setup, find_packages
 
 setup(
     name="piwave",
-    version="2.0.0",
+    version="2.0.1",
     description="A Python module to manage your Pi radio using pi_fm_rds with stream support.",
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
