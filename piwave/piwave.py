@@ -1,5 +1,4 @@
 # piwave/piwave.py
-# Improved version by Claude - fixes blocking issues, adds stream support, better error handling
 # pi_fm_rds is required !!! Check https://github.com/ChristopheJacquet/PiFmRds
 
 import os
@@ -320,40 +319,56 @@ class PiWave:
     def _play_wav(self, wav_file: str) -> bool:
         if self.stop_event.is_set():
             return False
-        
+
+        duration = self._get_file_duration(wav_file)
+        if duration <= 0:
+            Log.error(f"Could not determine duration for {wav_file}")
+            return False
+
         cmd = [
-            'sudo', self.pi_fm_rds_path, 
+            'sudo', self.pi_fm_rds_path,
             '-freq', str(self.frequency),
             '-ps', self.ps,
             '-rt', self.rt,
             '-pi', self.pi,
             '-audio', wav_file
         ]
-        
+
         try:
-            Log.broadcast_message(f"Playing {wav_file} at {self.frequency}MHz")
-            
+            Log.broadcast_message(f"Playing {wav_file} (Duration: {duration:.1f}s) at {self.frequency}MHz")
             self.current_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
                 preexec_fn=os.setsid
             )
-            
+
             if self.on_track_change:
                 self.on_track_change(wav_file, self.current_index)
-            
-            duration = self._get_file_duration(wav_file)
-            if duration > 0:
-                self.stop_event.wait(duration)
-            
+
+            # wait for either
+            # The duration to elapse (then kill the process), or
+            # stop_event to be set (user requested stop)
+            start_time = time.time()
+            while True:
+                if self.stop_event.wait(timeout=0.1):
+                    self._stop_current_process()
+                    return False
+
+                elapsed = time.time() - start_time
+                if elapsed >= duration:
+                    self._stop_current_process()
+                    break
+
             return True
-            
+
         except Exception as e:
             Log.error(f"Error playing {wav_file}: {e}")
             if self.on_error:
                 self.on_error(e)
+            self._stop_current_process()
             return False
+
 
     def _stop_current_process(self):
         if self.current_process:
@@ -373,26 +388,33 @@ class PiWave:
 
     def _playback_worker(self):
         self._log_debug("Playback worker started")
-        
+
         while not self.stop_event.is_set() and not self.is_stopped:
             if self.current_index >= len(self.playlist):
                 if self.loop:
                     self.current_index = 0
+                    continue
                 else:
                     break
-            
+
             if self.current_index < len(self.playlist):
                 wav_file = self.playlist[self.current_index]
-                success = self._play_wav(wav_file)
-                
-                if not success and not self.stop_event.is_set():
-                    Log.error(f"Failed to play {wav_file}")
-                
-                self._stop_current_process()
+
+                if not os.path.exists(wav_file):
+                    Log.error(f"File not found: {wav_file}")
+                    self.current_index += 1
+                    continue
+
+                if not self._play_wav(wav_file):
+                    if not self.stop_event.is_set():
+                        Log.error(f"Playback failed for {wav_file}")
+                    break
+
                 self.current_index += 1
-        
+
         self.is_playing = False
         self._log_debug("Playback worker finished")
+
 
     def _handle_interrupt(self, signum, frame):
         Log.warning("Interrupt received, stopping playback...")
