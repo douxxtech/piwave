@@ -12,7 +12,7 @@ on:
   push:
     branches: [main]
     paths: 
-      - 'setup.py'
+      - 'setup.cfg'
 
 permissions:
   contents: read
