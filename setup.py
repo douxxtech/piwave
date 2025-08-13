@@ -5,7 +5,7 @@ from setuptools import setup, find_packages
 setup(
     name="piwave",
     version="2.0.3",
-    description="A Python module to manage your Pi radio using pi_fm_rds with stream support.",
+    description="A python module to broacast radio waves with your Raspberry Pi.",
     long_description=open('README.md').read(),
     long_description_content_type='text/markdown',
     author="Douxx",
