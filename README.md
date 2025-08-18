@@ -15,11 +15,6 @@
 - Supports streaming from URLs.
 - Better error handling and event callbacks.
 - Non-blocking playback with threading.
-- Temporary file management for streamed content.
-
-> [!NOTE]
-> Are you looking for a minimal GUI for PiWave?
-> Take a look at the [PiWave WebGUI](https://github.com/douxxtech/piwave-webgui)
 
 ## Hardware Installation
 
