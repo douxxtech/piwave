@@ -294,7 +294,7 @@ class PiWave:
         except Exception:
             pass
 
-        return "alsa"  # fallback par défaut
+        raise PiWaveError("No audio backend detected (PulseAudio or PipeWire).")
 
     def _convert_to_wav(self, filepath: str) -> Optional[str]:
         if filepath in self.converted_files:
