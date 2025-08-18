@@ -708,7 +708,7 @@ class PiWave:
         else:
             raise PiWaveError(f"Unsupported backend: {backend}")
 
-        fm_cmd = ["sudo", self.pi_fm_rds_path,
+        fm_cmd = [self.pi_fm_rds_path,
                   "-freq", str(self.frequency),
                   "-ps", self.ps,
                   "-rt", self.rt,
