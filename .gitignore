@@ -1,0 +1,22 @@
+*
+
+# main module
+!/piwave/__init__.py
+!/piwave/piwave.py
+
+# utilities
+!/.gitignore
+!/README.md
+!/LICENSE
+
+# install / uninstall scripts
+!/install.sh
+!/uninstall.sh
+
+# python packaging
+!/setup.py
+!/pyproject.toml
+!/setup.cfg
+
+# workflows
+!/.github/workflows/**
