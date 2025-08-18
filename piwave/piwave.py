@@ -253,6 +253,24 @@ class PiWave:
         except Exception as e:
             Log.error(f"Error downloading stream: {e}")
             return False
+        
+    def _detect_backend(self) -> str:
+        #autodetects the audio backend
+        try:
+            result = subprocess.run(["pactl", "info"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+            if result.returncode == 0:
+                return "pulse"
+        except Exception:
+            pass
+
+        try:
+            result = subprocess.run(["pw-cli", "info", "0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
+            if result.returncode == 0:
+                return "pipewire"
+        except Exception:
+            pass
+
+        return "alsa"  # fallback par défaut
 
     def _convert_to_wav(self, filepath: str) -> Optional[str]:
         if filepath in self.converted_files:
@@ -470,15 +488,32 @@ class PiWave:
         if not self.is_playing:
             return
         
-        Log.warning("Stopping playback")
+        Log.warning("Stopping playback...")
+
         self.is_stopped = True
         self.stop_event.set()
-        
-        self._stop_current_process()
-        
+
+        if self.current_process:
+            try:
+                os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
+                self.current_process.wait(timeout=5)
+            except Exception:
+                pass
+            finally:
+                self.current_process = None
+
+        if self.stream_process:
+            try:
+                os.killpg(os.getpgid(self.stream_process.pid), signal.SIGTERM)
+                self.stream_process.wait(timeout=5)
+            except Exception:
+                pass
+            finally:
+                self.stream_process = None
+
         if self.playback_thread and self.playback_thread.is_alive():
             self.playback_thread.join(timeout=5)
-        
+
         self.is_playing = False
         Log.success("Playback stopped")
 
@@ -513,6 +548,48 @@ class PiWave:
             'frequency': self.frequency,
             'current_file': self.playlist[self.current_index] if self.current_index < len(self.playlist) else None
         }
+
+    def go_live(self, source: str = "default", backend: Optional[str] = None):
+        # goes live with the specified source and backend -> audio input must be connected to the Pi
+
+        if self.is_playing:
+            self.stop()
+
+        if backend is None:
+            backend = self._detect_backend()
+            Log.info(f"Detected backend: {backend}")
+
+        if backend == "pulse":
+            capture_cmd = ["ffmpeg", "-f", "pulse", "-i", source,
+                           "-ac", "2", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"]
+        elif backend == "pipewire":
+            capture_cmd = ["ffmpeg", "-f", "pipewire", "-i", source,
+                           "-ac", "2", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"]
+        elif backend == "alsa":
+            capture_cmd = ["ffmpeg", "-f", "alsa", "-i", source,
+                           "-ac", "2", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"]
+        else:
+            raise PiWaveError(f"Unsupported backend: {backend}")
+
+        fm_cmd = ["sudo", self.pi_fm_rds_path,
+                  "-freq", str(self.frequency),
+                  "-ps", self.ps,
+                  "-rt", self.rt,
+                  "-pi", self.pi,
+                  "-audio", "-"]
+
+        Log.broadcast_message(f"Broadcasting live via {backend}:{source} on {self.frequency} MHz")
+
+        self.current_process = subprocess.Popen(
+            capture_cmd, stdout=subprocess.PIPE, preexec_fn=os.setsid
+        )
+        self.stream_process = subprocess.Popen(
+            fm_cmd, stdin=self.current_process.stdout,
+            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
+            preexec_fn=os.setsid
+        )
+
+        self.is_playing = True
 
     def cleanup(self):
         self.stop()
