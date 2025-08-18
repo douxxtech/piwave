@@ -1,4 +1,4 @@
-# piwave/piwave.py
+# piwave/pw.py
 # pi_fm_rds is required !!! Check https://github.com/ChristopheJacquet/PiFmRds
 
 import os
@@ -112,6 +112,30 @@ class PiWave:
                  debug: bool = False,
                  on_track_change: Optional[Callable] = None,
                  on_error: Optional[Callable] = None):
+        """Initialize PiWave FM transmitter.
+
+        :param frequency: FM frequency to broadcast on (80.0-108.0 MHz)
+        :type frequency: float
+        :param ps: Program Service name (max 8 characters)
+        :type ps: str
+        :param rt: Radio Text message (max 64 characters)
+        :type rt: str
+        :param pi: Program Identification code (4 hex digits)
+        :type pi: str
+        :param loop: Whether to loop the playlist when it ends
+        :type loop: bool
+        :param debug: Enable debug logging
+        :type debug: bool
+        :param on_track_change: Callback function called when track changes
+        :type on_track_change: Optional[Callable]
+        :param on_error: Callback function called when an error occurs
+        :type on_error: Optional[Callable]
+        :raises PiWaveError: If not running on Raspberry Pi or without root privileges
+        
+        .. note::
+           This class requires pi_fm_rds to be installed and accessible.
+           Must be run on a Raspberry Pi with root privileges.
+        """
         
         self.debug = debug
         self.frequency = frequency
@@ -440,6 +464,21 @@ class PiWave:
         os._exit(0)
 
     def add_files(self, files: List[str]) -> bool:
+        """Add audio files to the playlist.
+
+        :param files: List of file paths or URLs to add to the playlist
+        :type files: List[str]
+        :return: True if at least one file was successfully added, False otherwise
+        :rtype: bool
+        
+        .. note::
+           Files are automatically converted to WAV format if needed.
+           URLs are supported for streaming audio.
+        
+        Example:
+            >>> pw.add_files(['song1.mp3', 'song2.wav', 'http://stream.url'])
+        """
+
         converted_files = []
         
         for file_path in files:
@@ -460,6 +499,21 @@ class PiWave:
         return False
 
     def play(self, files: Optional[List[str]] = None) -> bool:
+        """Start playing the playlist or specified files.
+
+        :param files: Optional list of files to play. If provided, replaces current playlist
+        :type files: Optional[List[str]]
+        :return: True if playback started successfully, False otherwise
+        :rtype: bool
+        
+        .. note::
+           If no files are specified, plays the current playlist.
+           Automatically stops any current playback before starting.
+        
+        Example:
+            >>> pw.play(['song1.mp3', 'song2.wav'])  # Play specific files
+            >>> pw.play()  # Play current playlist
+        """
         if files:
             self.playlist.clear()
             self.current_index = 0
@@ -485,6 +539,14 @@ class PiWave:
         return True
 
     def stop(self):
+        """Stop all playback and streaming.
+
+        Stops the current playback, kills all related processes, and resets the player state.
+        This method is safe to call multiple times.
+        
+        Example:
+            >>> pw.stop()
+        """
         if not self.is_playing:
             return
         
@@ -518,29 +580,88 @@ class PiWave:
         Log.success("Playback stopped")
 
     def pause(self):
+        """Pause the current playback.
+
+        Stops the current track but maintains the playlist position.
+        Use :meth:`resume` to continue playback.
+        
+        Example:
+            >>> pw.pause()
+        """
         if self.is_playing:
             self._stop_current_process()
             Log.info("Playback paused")
 
     def resume(self):
+        """Resume playback from the current position.
+
+        Continues playback from where it was paused or stopped.
+        
+        Example:
+            >>> pw.resume()
+        """
         if not self.is_playing and self.playlist:
             self.play()
 
     def next_track(self):
+        """Skip to the next track in the playlist.
+
+        If currently playing, stops the current track and advances to the next one.
+        
+        Example:
+            >>> pw.next_track()
+        """
         if self.is_playing:
             self._stop_current_process()
             self.current_index += 1
 
     def previous_track(self):
+        """Go back to the previous track in the playlist.
+
+        If currently playing, stops the current track and goes to the previous one.
+        Cannot go before the first track.
+        
+        Example:
+            >>> pw.previous_track()
+        """
         if self.is_playing:
             self._stop_current_process()
             self.current_index = max(0, self.current_index - 1)
 
     def set_frequency(self, frequency: float):
+        """Change the FM broadcast frequency.
+
+        :param frequency: New frequency in MHz (typically 88.0-108.0)
+        :type frequency: float
+        
+        .. note::
+           The frequency change will take effect on the next track or broadcast.
+        
+        Example:
+            >>> pw.set_frequency(101.5)
+        """
         self.frequency = frequency
         Log.broadcast_message(f"Frequency changed to {frequency}MHz. Will update on next file's broadcast.")
 
     def get_status(self) -> dict:
+        """Get current status information.
+
+        :return: Dictionary containing current player status
+        :rtype: dict
+        
+        The returned dictionary contains:
+        
+        - **is_playing** (bool): Whether playback is active
+        - **current_index** (int): Current position in playlist
+        - **playlist_length** (int): Total number of items in playlist
+        - **frequency** (float): Current broadcast frequency
+        - **current_file** (str|None): Path of currently playing file
+        
+        Example:
+            >>> status = pw.get_status()
+            >>> print(f"Playing: {status['is_playing']}")
+            >>> print(f"Track {status['current_index'] + 1} of {status['playlist_length']}")
+        """
         return {
             'is_playing': self.is_playing,
             'current_index': self.current_index,
@@ -550,6 +671,22 @@ class PiWave:
         }
 
     def go_live(self, source: str = "default", backend: Optional[str] = None):
+        """Start live broadcasting from an audio input source.
+
+        :param source: Audio input source name (device-specific)
+        :type source: str
+        :param backend: Audio backend to use ("pulse", "pipewire", "alsa"). Auto-detected if None
+        :type backend: Optional[str]
+        :raises PiWaveError: If the specified backend is not supported
+        
+        .. note::
+           Requires an audio input device connected to the Raspberry Pi.
+           This method will stop any current file playback.
+        
+        Example:
+            >>> pw.go_live("hw:1,0")  # Use specific ALSA device
+            >>> pw.go_live()  # Use default source with auto-detected backend
+        """
         # goes live with the specified source and backend -> audio input must be connected to the Pi
 
         if self.is_playing:
@@ -592,6 +729,14 @@ class PiWave:
         self.is_playing = True
 
     def cleanup(self):
+        """Clean up resources and temporary files.
+
+        Stops all playback, removes temporary files, and cleans up system resources.
+        This method is automatically called when the object is destroyed.
+        
+        Example:
+            >>> pw.cleanup()
+        """
         self.stop()
         
         if os.path.exists(self.temp_dir):
@@ -603,9 +748,30 @@ class PiWave:
         self.cleanup()
 
     def send(self, files: List[str]):
+        """Alias for the play method.
+
+        :param files: List of file paths or URLs to play
+        :type files: List[str]
+        :return: True if playback started successfully, False otherwise
+        :rtype: bool
+        
+        .. note::
+           This is an alias for :meth:`play` for backward compatibility.
+        
+        Example:
+            >>> pw.send(['song1.mp3', 'song2.wav'])
+        """
         return self.play(files)
 
     def restart(self):
+        """Restart playback from the beginning of the playlist.
+
+        Resets the current position to the first track and starts playback.
+        Only works if there are files in the playlist.
+        
+        Example:
+            >>> pw.restart()
+        """
         if self.playlist:
             self.current_index = 0
             self.play()
