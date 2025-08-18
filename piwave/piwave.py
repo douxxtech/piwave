@@ -277,24 +277,6 @@ class PiWave:
         except Exception as e:
             Log.error(f"Error downloading stream: {e}")
             return False
-        
-    def _detect_backend(self) -> str:
-        #autodetects the audio backend
-        try:
-            result = subprocess.run(["pactl", "info"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-            if result.returncode == 0:
-                return "pulse"
-        except Exception:
-            pass
-
-        try:
-            result = subprocess.run(["pw-cli", "info", "0"], stdout=subprocess.PIPE, stderr=subprocess.PIPE, timeout=2)
-            if result.returncode == 0:
-                return "pipewire"
-        except Exception:
-            pass
-
-        raise PiWaveError("No audio backend detected (PulseAudio or PipeWire).")
 
     def _convert_to_wav(self, filepath: str) -> Optional[str]:
         if filepath in self.converted_files:
@@ -669,64 +651,6 @@ class PiWave:
             'frequency': self.frequency,
             'current_file': self.playlist[self.current_index] if self.current_index < len(self.playlist) else None
         }
-
-    def go_live(self, source: str = "default", backend: Optional[str] = None):
-        """Start live broadcasting from an audio input source.
-
-        :param source: Audio input source name (device-specific)
-        :type source: str
-        :param backend: Audio backend to use ("pulse", "pipewire", "alsa"). Auto-detected if None
-        :type backend: Optional[str]
-        :raises PiWaveError: If the specified backend is not supported
-        
-        .. note::
-           Requires an audio input device connected to the Raspberry Pi.
-           This method will stop any current file playback.
-        
-        Example:
-            >>> pw.go_live("hw:1,0")  # Use specific ALSA device
-            >>> pw.go_live()  # Use default source with auto-detected backend
-        """
-        # goes live with the specified source and backend -> audio input must be connected to the Pi
-
-        if self.is_playing:
-            self.stop()
-
-        if backend is None:
-            backend = self._detect_backend()
-            Log.info(f"Detected backend: {backend}")
-
-        if backend == "pulse":
-            capture_cmd = ["ffmpeg", "-f", "pulse", "-i", source,
-                           "-ac", "2", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"]
-        elif backend == "pipewire":
-            capture_cmd = ["ffmpeg", "-f", "pipewire", "-i", source,
-                           "-ac", "2", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"]
-        elif backend == "alsa":
-            capture_cmd = ["ffmpeg", "-f", "alsa", "-i", source,
-                           "-ac", "2", "-ar", "48000", "-f", "s16le", "-acodec", "pcm_s16le", "-"]
-        else:
-            raise PiWaveError(f"Unsupported backend: {backend}")
-
-        fm_cmd = [self.pi_fm_rds_path,
-                  "-freq", str(self.frequency),
-                  "-ps", self.ps,
-                  "-rt", self.rt,
-                  "-pi", self.pi,
-                  "-audio", "-"]
-
-        Log.broadcast_message(f"Broadcasting live via {backend}:{source} on {self.frequency} MHz")
-
-        self.current_process = subprocess.Popen(
-            capture_cmd, stdout=subprocess.PIPE, preexec_fn=os.setsid
-        )
-        self.stream_process = subprocess.Popen(
-            fm_cmd, stdin=self.current_process.stdout,
-            stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            preexec_fn=os.setsid
-        )
-
-        self.is_playing = True
 
     def cleanup(self):
         """Clean up resources and temporary files.

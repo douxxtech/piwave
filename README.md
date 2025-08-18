@@ -146,11 +146,6 @@ To install PiWave manually, follow these steps:
    print(status)
    ```
 
-10. **Going live (via rpi audio input)**
-   ```python
-   piwave.go_live()
-   ```
-
 ### Configuration
 
 - `frequency`: The broadcast frequency in MHz (default: 90.0).
