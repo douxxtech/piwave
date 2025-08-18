@@ -615,3 +615,5 @@ if __name__ == "__main__":
     Log.info("This module is designed to run on a Raspberry Pi with root privileges.")
     Log.info("Please import this module in your main application to use its features.")
     Log.info("Exiting PiWave module")
+
+__all__ = ["PiWave"]
