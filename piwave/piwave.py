@@ -49,8 +49,17 @@ class Log:
         'update': 'UPD',
     }
 
+    SILENT = False
+
+    @classmethod
+    def config(cls, silent: bool = False):
+        cls.SILENT = silent
+
     @classmethod
     def print(cls, message: str, style: str = '', icon: str = '', end: str = '\n'):
+
+        if cls.SILENT: return
+
         color = cls.COLORS.get(style, '')
         icon_char = cls.ICONS.get(icon, '')
         if icon_char:
@@ -111,6 +120,7 @@ class PiWave:
                  pi: str = "FFFF", 
                  loop: bool = False, 
                  debug: bool = False,
+                 silent: bool = False,
                  on_track_change: Optional[Callable] = None,
                  on_error: Optional[Callable] = None):
         """Initialize PiWave FM transmitter.
@@ -127,6 +137,8 @@ class PiWave:
         :type loop: bool
         :param debug: Enable debug logging
         :type debug: bool
+        :param silent: Removes every output log
+        :type silent: bool
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -159,12 +171,15 @@ class PiWave:
         
         self.temp_dir = tempfile.mkdtemp(prefix="piwave_")
         self.stream_process: Optional[subprocess.Popen] = None
+
+        Log.config(silent=silent)
         
         self.pi_fm_rds_path = self._find_pi_fm_rds_path()
         
         self._validate_environment()
         
         atexit.register(self.cleanup)
+
         
         Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
 
