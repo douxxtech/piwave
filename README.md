@@ -95,6 +95,7 @@ To install PiWave manually, follow these steps:
        pi="ABCD",
        loop=True,
        debug=True,
+       silent=False,
        on_track_change=lambda file, index: print(f"Now playing: {file}"),
        on_error=lambda error: print(f"Error occurred: {error}")
    )
@@ -154,6 +155,7 @@ To install PiWave manually, follow these steps:
 - `pi`: Program Identifier (up to 4 characters, default: "FFFF").
 - `loop`: Whether to loop playback of files (default: False).
 - `debug`: Enable detailed debug logging (default: False).
+- `silent`: Disables every log output (default: False).
 - `on_track_change`: Callback function when the track changes (default: None).
 - `on_error`: Callback function when an error occurs (default: None).
 
