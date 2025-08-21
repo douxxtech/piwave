@@ -1,7 +1,6 @@
 #!/bin/bash
 # github.com/douxxtech | git.douxx.tech/piwave 
 
-
 print_magenta() {
   echo -e "\e[35m$1\e[0m"
 }
@@ -30,25 +29,32 @@ print_magenta "
                      '----------------'                            |
 "
 
+INSTALL_DIR="/opt/PiWave"
+
 echo "Stopping any running PiWave processes..."
-sudo pkill -f piwave
-check_status "Stopping PiWave processes"
+sudo pkill -f piwave 2>/dev/null
+echo "PiWave processes stopped (if any)."
 
-echo "Uninstalling PiWave Python package..."
-sudo pip uninstall -y piwave --break-system-packages
-check_status "Uninstalling PiWave"
+echo "Removing installation directory: $INSTALL_DIR ..."
+if [ -d "$INSTALL_DIR" ]; then
+  sudo rm -rf "$INSTALL_DIR"
+  check_status "Removing $INSTALL_DIR"
+else
+  echo "Directory $INSTALL_DIR not found, skipping..."
+fi
 
-echo "Removing PiFmRds directory..."
-sudo rm -rf PiFmRds
-check_status "Removing PiFmRds directory"
-
-echo "Removing PiWave_deps directory..."
-cd .. || { echo -e "\e[31mError: cd to parent directory failed\e[0m"; exit 1; }
-sudo rm -rf PiWave_deps
-check_status "Removing PiWave_deps directory"
-
-echo "Cleaning up residual configuration and dependencies..."
+echo "Cleaning up residual packages..."
 sudo apt autoremove -y
-check_status "Cleaning residual files"
+check_status "Cleaning residual packages"
 
-echo "Uninstallation completed successfully!"
+print_magenta "Uninstallation completed successfully!"
+
+echo ""
+echo "==========================================================="
+echo "All dependencies in $INSTALL_DIR have been removed."
+echo "=> If you installed PiWave in a Python virtual environment,"
+echo "   you should manually remove that environment, e.g.:"
+echo ""
+echo "   rm -rf ~/piwave-env"
+echo ""
+echo "==========================================================="
