@@ -13,6 +13,7 @@ import sys
 from typing import List, Optional, Callable
 from pathlib import Path
 from urllib.parse import urlparse
+import atexit
 
 class Log:
     COLORS = { # absolutely not taken from stackoverflow trust
@@ -163,8 +164,7 @@ class PiWave:
         
         self._validate_environment()
         
-        signal.signal(signal.SIGINT, self._handle_interrupt)
-        signal.signal(signal.SIGTERM, self._handle_interrupt)
+        atexit.register(self.cleanup)
         
         Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
 
