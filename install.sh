@@ -60,6 +60,20 @@ echo "Building PiFmRds..."
 cd "$INSTALL_DIR/PiFmRds/src" || { echo -e "\e[31mError: cd to PiFmRds/src failed\e[0m"; exit 1; }
 sudo make clean
 check_status "Cleaning previous builds"
+
+if [[ $(tr -d '\0' < /proc/device-tree/model) == *"Zero 2 W"* ]]; then
+    echo "Detected Raspberry Pi Zero 2 W. Patching Makefile..."
+    if [ -f Makefile ]; then
+        echo "Patching Makefile for Zero 2 W (RPI_VERSION=3)"
+        sed -i 's/^RPI_VERSION :=.*/RPI_VERSION = 3/' Makefile
+    else
+        echo "Makefile not found in src! Cannot patch."
+        exit 1
+    fi
+
+    check_status "Patching Makefile"
+fi
+
 sudo make
 check_status "Building PiFmRds"
 
