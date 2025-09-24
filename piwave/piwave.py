@@ -120,6 +120,7 @@ class PiWave:
                  pi: str = "FFFF", 
                  debug: bool = False,
                  silent: bool = False,
+                 loop: bool = False,
                  on_track_change: Optional[Callable] = None,
                  on_error: Optional[Callable] = None):
         """Initialize PiWave FM transmitter.
@@ -136,6 +137,8 @@ class PiWave:
         :type debug: bool
         :param silent: Removes every output log
         :type silent: bool
+        :param loop: Loop the current track continuously (default: False)
+        :type loop: bool
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -152,6 +155,7 @@ class PiWave:
         self.ps = str(ps)[:8]
         self.rt = str(rt)[:64]
         self.pi = str(pi).upper()[:4]
+        self.loop = loop
         self.on_track_change = on_track_change
         self.on_error = on_error
         
@@ -174,7 +178,7 @@ class PiWave:
         atexit.register(self.cleanup)
 
         
-        Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}")
+        Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
 
     def _log_debug(self, message: str):
         if self.debug:
@@ -331,7 +335,8 @@ class PiWave:
         ]
 
         try:
-            Log.broadcast_message(f"Playing {wav_file} (Duration: {duration:.1f}s) at {self.frequency}MHz")
+            loop_status = "looping" if self.loop else f"Duration: {duration:.1f}s"
+            Log.broadcast_message(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz")
             self.current_process = subprocess.Popen(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -342,19 +347,30 @@ class PiWave:
             if self.on_track_change:
                 self.on_track_change(wav_file)
 
-            # wait for either
-            # The duration to elapse (then kill the process), or
-            # stop_event to be set (user requested stop)
-            start_time = time.time()
-            while True:
-                if self.stop_event.wait(timeout=0.1):
-                    self._stop_current_process()
-                    return False
+            if self.loop:
+                # if looping is enabled, let pi_fm_rds handle the looping
+                # and just wait for stop event
+                while not self.stop_event.is_set():
+                    if self.stop_event.wait(timeout=0.1):
+                        self._stop_current_process()
+                        return False
+                    
+                    # check if process exists cuz why not
+                    if self.current_process.poll() is not None:
+                        Log.error("Process ended unexpectedly while looping")
+                        return False
+            else:
+                # if not looping wait for stopevent or end of file
+                start_time = time.time()
+                while True:
+                    if self.stop_event.wait(timeout=0.1):
+                        self._stop_current_process()
+                        return False
 
-                elapsed = time.time() - start_time
-                if elapsed >= duration:
-                    self._stop_current_process()
-                    break
+                    elapsed = time.time() - start_time
+                    if elapsed >= duration:
+                        self._stop_current_process()
+                        break
 
             return True
 
@@ -424,7 +440,8 @@ class PiWave:
         
         .. note::
            Files are automatically converted to WAV format if needed.
-           Only local files are supported.
+           Only local files are supported. If loop is enabled, the file will
+           repeat continuously until stop() is called.
         
         Example:
             >>> pw.play('song.mp3')
@@ -509,6 +526,7 @@ class PiWave:
                pi: Optional[str] = None,
                debug: Optional[bool] = None,
                silent: Optional[bool] = None,
+               loop: Optional[bool] = None,
                on_track_change: Optional[Callable] = None,
                on_error: Optional[Callable] = None):
         """Update PiWave settings.
@@ -525,6 +543,8 @@ class PiWave:
         :type debug: Optional[bool]
         :param silent: Remove every output log
         :type silent: Optional[bool]
+        :param loop: Loop the current track continuously
+        :type loop: Optional[bool]
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -535,7 +555,7 @@ class PiWave:
         
         Example:
             >>> pw.update(frequency=101.5, ps="NewName")
-            >>> pw.update(rt="Updated radio text", debug=True)
+            >>> pw.update(rt="Updated radio text", debug=True, loop=True)
         """
         updated_settings = []
         
@@ -562,6 +582,10 @@ class PiWave:
         if silent is not None:
             Log.config(silent=silent)
             updated_settings.append(f"silent: {silent}")
+        
+        if loop is not None:
+            self.loop = loop
+            updated_settings.append(f"loop: {loop}")
         
         if on_track_change is not None:
             self.on_track_change = on_track_change
@@ -591,6 +615,23 @@ class PiWave:
         self.frequency = frequency
         Log.broadcast_message(f"Frequency changed to {frequency}MHz. Will update on next file's broadcast.")
 
+    def set_loop(self, loop: bool):
+        """Enable or disable looping for the current track.
+
+        :param loop: True to enable looping, False to disable
+        :type loop: bool
+        
+        .. note::
+           The loop setting will take effect on the next broadcast.
+        
+        Example:
+            >>> pw.set_loop(True)   # Enable looping
+            >>> pw.set_loop(False)  # Disable looping
+        """
+        self.loop = loop
+        loop_status = "enabled" if loop else "disabled"
+        Log.broadcast_message(f"Looping {loop_status}. Will update on next file's broadcast.")
+
     def get_status(self) -> dict:
         """Get current status information.
 
@@ -605,11 +646,13 @@ class PiWave:
         - **ps** (str): Program Service name
         - **rt** (str): Radio Text message
         - **pi** (str): Program Identification code
+        - **loop** (bool): Whether looping is enabled
         
         Example:
             >>> status = pw.get_status()
             >>> print(f"Playing: {status['is_playing']}")
             >>> print(f"Current file: {status['current_file']}")
+            >>> print(f"Looping: {status['loop']}")
         """
         return {
             'is_playing': self.is_playing,
@@ -617,7 +660,8 @@ class PiWave:
             'current_file': self.current_file,
             'ps': self.ps,
             'rt': self.rt,
-            'pi': self.pi
+            'pi': self.pi,
+            'loop': self.loop
         }
 
     def cleanup(self):
