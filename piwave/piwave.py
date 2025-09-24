@@ -6,11 +6,11 @@ import subprocess
 import signal
 import threading
 import time
-import asyncio
+
 import tempfile
 import shutil
 import sys
-from typing import List, Optional, Callable
+from typing import Optional, Callable
 from pathlib import Path
 from urllib.parse import urlparse
 import atexit
@@ -118,7 +118,6 @@ class PiWave:
                  ps: str = "PiWave", 
                  rt: str = "PiWave: The best python module for managing your pi radio", 
                  pi: str = "FFFF", 
-                 loop: bool = False, 
                  debug: bool = False,
                  silent: bool = False,
                  on_track_change: Optional[Callable] = None,
@@ -133,8 +132,6 @@ class PiWave:
         :type rt: str
         :param pi: Program Identification code (4 hex digits)
         :type pi: str
-        :param loop: Whether to loop the playlist when it ends
-        :type loop: bool
         :param debug: Enable debug logging
         :type debug: bool
         :param silent: Removes every output log
@@ -155,13 +152,10 @@ class PiWave:
         self.ps = str(ps)[:8]
         self.rt = str(rt)[:64]
         self.pi = str(pi).upper()[:4]
-        self.loop = loop
         self.on_track_change = on_track_change
         self.on_error = on_error
         
-        self.playlist: List[str] = []
-        self.converted_files: dict[str, str] = {}
-        self.current_index = 0
+        self.current_file: Optional[str] = None
         self.is_playing = False
         self.is_stopped = False
         
@@ -170,7 +164,6 @@ class PiWave:
         self.stop_event = threading.Event()
         
         self.temp_dir = tempfile.mkdtemp(prefix="piwave_")
-        self.stream_process: Optional[subprocess.Popen] = None
 
         Log.config(silent=silent)
         
@@ -181,11 +174,11 @@ class PiWave:
         atexit.register(self.cleanup)
 
         
-        Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
+        Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}")
 
     def _log_debug(self, message: str):
         if self.debug:
-            Log.print(f"[DEBUG] {message}", 'blue')
+            Log.print(f"[DEBUG] {message}", 'bright_cyan')
 
 
     def _validate_environment(self):
@@ -200,10 +193,10 @@ class PiWave:
 
     def _is_raspberry_pi(self) -> bool:
         try:
-            with open("/sys/firmware/devicetree/base/model", "r") as f:
-                model = f.read().strip()
-                return "Raspberry Pi" in model
-        except FileNotFoundError:
+            with open('/proc/cpuinfo', 'r') as f:
+                cpuinfo = f.read()
+            return 'raspberry' in cpuinfo.lower()
+        except:
             return False
 
     def _is_root(self) -> bool:
@@ -261,52 +254,17 @@ class PiWave:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
             return False
 
-    def _is_url(self, path: str) -> bool:
-        parsed = urlparse(path)
-        return parsed.scheme in ('http', 'https', 'ftp')
-
     def _is_wav_file(self, filepath: str) -> bool:
         return filepath.lower().endswith('.wav')
 
-    async def _download_stream_chunk(self, url: str, output_file: str, duration: int = 30) -> bool:
-        #Download a chunk of stream for specified duration
-        try:
-            cmd = [
-                'ffmpeg', '-i', url, '-t', str(duration), 
-                '-acodec', 'pcm_s16le', '-ar', '44100', '-ac', '2',
-                '-y', output_file
-            ]
-            
-            process = await asyncio.create_subprocess_exec(
-                *cmd,
-                stdout=asyncio.subprocess.PIPE,
-                stderr=asyncio.subprocess.PIPE
-            )
-            
-            stdout, stderr = await asyncio.wait_for(process.communicate(), timeout=duration + 10)
-            return process.returncode == 0
-            
-        except asyncio.TimeoutError:
-            Log.error(f"Timeout downloading stream chunk from {url}")
-            return False
-        except Exception as e:
-            Log.error(f"Error downloading stream: {e}")
-            return False
 
     def _convert_to_wav(self, filepath: str) -> Optional[str]:
-        if filepath in self.converted_files:
-            return self.converted_files[filepath]
-        
-        if self._is_wav_file(filepath) and not self._is_url(filepath):
-            self.converted_files[filepath] = filepath
+        if self._is_wav_file(filepath):
             return filepath
         
         Log.file_message(f"Converting {filepath} to WAV")
         
-        if self._is_url(filepath):
-            output_file = os.path.join(self.temp_dir, f"stream_{int(time.time())}.wav")
-        else:
-            output_file = f"{os.path.splitext(filepath)[0]}_converted.wav"
+        output_file = f"{os.path.splitext(filepath)[0]}_converted.wav"
         
         cmd = [
             'ffmpeg', '-i', filepath, '-acodec', 'pcm_s16le', 
@@ -314,7 +272,7 @@ class PiWave:
         ]
         
         try:
-            result = subprocess.run(
+            subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
                 stderr=subprocess.PIPE,
@@ -324,7 +282,6 @@ class PiWave:
             
             self._log_debug(f"FFmpeg conversion successful for {filepath}")
             
-            self.converted_files[filepath] = output_file
             return output_file
             
         except subprocess.TimeoutExpired:
@@ -383,7 +340,7 @@ class PiWave:
             )
 
             if self.on_track_change:
-                self.on_track_change(wav_file, self.current_index)
+                self.on_track_change(wav_file)
 
             # wait for either
             # The duration to elapse (then kill the process), or
@@ -428,28 +385,25 @@ class PiWave:
     def _playback_worker(self):
         self._log_debug("Playback worker started")
 
-        while not self.stop_event.is_set() and not self.is_stopped:
-            if self.current_index >= len(self.playlist):
-                if self.loop:
-                    self.current_index = 0
-                    continue
-                else:
-                    break
+        if not self.current_file:
+            Log.error("No file specified for playback")
+            self.is_playing = False
+            return
 
-            if self.current_index < len(self.playlist):
-                wav_file = self.playlist[self.current_index]
+        wav_file = self._convert_to_wav(self.current_file)
+        if not wav_file:
+            Log.error(f"Failed to convert {self.current_file}")
+            self.is_playing = False
+            return
 
-                if not os.path.exists(wav_file):
-                    Log.error(f"File not found: {wav_file}")
-                    self.current_index += 1
-                    continue
+        if not os.path.exists(wav_file):
+            Log.error(f"File not found: {wav_file}")
+            self.is_playing = False
+            return
 
-                if not self._play_wav(wav_file):
-                    if not self.stop_event.is_set():
-                        Log.error(f"Playback failed for {wav_file}")
-                    break
-
-                self.current_index += 1
+        if not self._play_wav(wav_file):
+            if not self.stop_event.is_set():
+                Log.error(f"Playback failed for {wav_file}")
 
         self.is_playing = False
         self._log_debug("Playback worker finished")
@@ -460,70 +414,27 @@ class PiWave:
         self.stop()
         os._exit(0)
 
-    def add_files(self, files: List[str]) -> bool:
-        """Add audio files to the playlist.
+    def play(self, file_path: str) -> bool:
+        """Start playing the specified audio file.
 
-        :param files: List of file paths or URLs to add to the playlist
-        :type files: List[str]
-        :return: True if at least one file was successfully added, False otherwise
-        :rtype: bool
-        
-        .. note::
-           Files are automatically converted to WAV format if needed.
-           URLs are supported for streaming audio.
-        
-        Example:
-            >>> pw.add_files(['song1.mp3', 'song2.wav', 'http://stream.url'])
-        """
-
-        converted_files = []
-        
-        for file_path in files:
-            if self._is_url(file_path):
-                converted_files.append(file_path)
-            else:
-                wav_file = self._convert_to_wav(file_path)
-                if wav_file:
-                    converted_files.append(wav_file)
-                else:
-                    Log.warning(f"Failed to convert {file_path}")
-        
-        if converted_files:
-            self.playlist.extend(converted_files)
-            Log.success(f"Added {len(converted_files)} files to playlist")
-            return True
-        
-        return False
-
-    def play(self, files: Optional[List[str]] = None) -> bool:
-        """Start playing the playlist or specified files.
-
-        :param files: Optional list of files to play. If provided, replaces current playlist
-        :type files: Optional[List[str]]
+        :param file_path: Path to local audio file
+        :type file_path: str
         :return: True if playback started successfully, False otherwise
         :rtype: bool
         
         .. note::
-           If no files are specified, plays the current playlist.
-           Automatically stops any current playback before starting.
+           Files are automatically converted to WAV format if needed.
+           Only local files are supported.
         
         Example:
-            >>> pw.play(['song1.mp3', 'song2.wav'])  # Play specific files
-            >>> pw.play()  # Play current playlist
+            >>> pw.play('song.mp3')
+            >>> pw.play('audio.wav')
         """
-        if files:
-            self.playlist.clear()
-            self.current_index = 0
-            if not self.add_files(files):
-                return False
-        
-        if not self.playlist:
-            Log.warning("No files in playlist")
-            return False
         
         if self.is_playing:
             self.stop()
         
+        self.current_file = file_path
         self.stop_event.clear()
         self.is_stopped = False
         self.is_playing = True
@@ -561,15 +472,6 @@ class PiWave:
             finally:
                 self.current_process = None
 
-        if self.stream_process:
-            try:
-                os.killpg(os.getpgid(self.stream_process.pid), signal.SIGTERM)
-                self.stream_process.wait(timeout=5)
-            except Exception:
-                pass
-            finally:
-                self.stream_process = None
-
         if self.playback_thread and self.playback_thread.is_alive():
             self.playback_thread.join(timeout=5)
 
@@ -579,7 +481,7 @@ class PiWave:
     def pause(self):
         """Pause the current playback.
 
-        Stops the current track but maintains the playlist position.
+        Stops the current track but maintains the file reference.
         Use :meth:`resume` to continue playback.
         
         Example:
@@ -590,40 +492,89 @@ class PiWave:
             Log.info("Playback paused")
 
     def resume(self):
-        """Resume playback from the current position.
+        """Resume playback from the current file.
 
-        Continues playback from where it was paused or stopped.
+        Continues playback of the current file.
         
         Example:
             >>> pw.resume()
         """
-        if not self.is_playing and self.playlist:
-            self.play()
+        if not self.is_playing and self.current_file:
+            self.play(self.current_file)
 
-    def next_track(self):
-        """Skip to the next track in the playlist.
+    def update(self, 
+               frequency: Optional[float] = None,
+               ps: Optional[str] = None,
+               rt: Optional[str] = None,
+               pi: Optional[str] = None,
+               debug: Optional[bool] = None,
+               silent: Optional[bool] = None,
+               on_track_change: Optional[Callable] = None,
+               on_error: Optional[Callable] = None):
+        """Update PiWave settings.
 
-        If currently playing, stops the current track and advances to the next one.
+        :param frequency: FM frequency to broadcast on (80.0-108.0 MHz)
+        :type frequency: Optional[float]
+        :param ps: Program Service name (max 8 characters)
+        :type ps: Optional[str]
+        :param rt: Radio Text message (max 64 characters)
+        :type rt: Optional[str]
+        :param pi: Program Identification code (4 hex digits)
+        :type pi: Optional[str]
+        :param debug: Enable debug logging
+        :type debug: Optional[bool]
+        :param silent: Remove every output log
+        :type silent: Optional[bool]
+        :param on_track_change: Callback function called when track changes
+        :type on_track_change: Optional[Callable]
+        :param on_error: Callback function called when an error occurs
+        :type on_error: Optional[Callable]
+        
+        .. note::
+           Only non-None parameters will be updated. Changes take effect immediately, except for broadcast related changes, where you will have to start a new broadcast to apply them.
         
         Example:
-            >>> pw.next_track()
+            >>> pw.update(frequency=101.5, ps="NewName")
+            >>> pw.update(rt="Updated radio text", debug=True)
         """
-        if self.is_playing:
-            self._stop_current_process()
-            self.current_index += 1
-
-    def previous_track(self):
-        """Go back to the previous track in the playlist.
-
-        If currently playing, stops the current track and goes to the previous one.
-        Cannot go before the first track.
+        updated_settings = []
         
-        Example:
-            >>> pw.previous_track()
-        """
-        if self.is_playing:
-            self._stop_current_process()
-            self.current_index = max(0, self.current_index - 1)
+        if frequency is not None:
+            self.frequency = frequency
+            updated_settings.append(f"frequency: {frequency}MHz")
+        
+        if ps is not None:
+            self.ps = str(ps)[:8]
+            updated_settings.append(f"PS: {self.ps}")
+        
+        if rt is not None:
+            self.rt = str(rt)[:64]
+            updated_settings.append(f"RT: {self.rt}")
+        
+        if pi is not None:
+            self.pi = str(pi).upper()[:4]
+            updated_settings.append(f"PI: {self.pi}")
+        
+        if debug is not None:
+            self.debug = debug
+            updated_settings.append(f"debug: {debug}")
+        
+        if silent is not None:
+            Log.config(silent=silent)
+            updated_settings.append(f"silent: {silent}")
+        
+        if on_track_change is not None:
+            self.on_track_change = on_track_change
+            updated_settings.append("on_track_change callback updated")
+        
+        if on_error is not None:
+            self.on_error = on_error
+            updated_settings.append("on_error callback updated")
+        
+        if updated_settings:
+            Log.success(f"Updated settings: {', '.join(updated_settings)}")
+        else:
+            Log.info("No settings updated")
 
     def set_frequency(self, frequency: float):
         """Change the FM broadcast frequency.
@@ -632,7 +583,7 @@ class PiWave:
         :type frequency: float
         
         .. note::
-           The frequency change will take effect on the next track or broadcast.
+           The frequency change will take effect on the next broadcast.
         
         Example:
             >>> pw.set_frequency(101.5)
@@ -649,22 +600,24 @@ class PiWave:
         The returned dictionary contains:
         
         - **is_playing** (bool): Whether playback is active
-        - **current_index** (int): Current position in playlist
-        - **playlist_length** (int): Total number of items in playlist
         - **frequency** (float): Current broadcast frequency
         - **current_file** (str|None): Path of currently playing file
+        - **ps** (str): Program Service name
+        - **rt** (str): Radio Text message
+        - **pi** (str): Program Identification code
         
         Example:
             >>> status = pw.get_status()
             >>> print(f"Playing: {status['is_playing']}")
-            >>> print(f"Track {status['current_index'] + 1} of {status['playlist_length']}")
+            >>> print(f"Current file: {status['current_file']}")
         """
         return {
             'is_playing': self.is_playing,
-            'current_index': self.current_index,
-            'playlist_length': len(self.playlist),
             'frequency': self.frequency,
-            'current_file': self.playlist[self.current_index] if self.current_index < len(self.playlist) else None
+            'current_file': self.current_file,
+            'ps': self.ps,
+            'rt': self.rt,
+            'pi': self.pi
         }
 
     def cleanup(self):
@@ -686,11 +639,11 @@ class PiWave:
     def __del__(self):
         self.cleanup()
 
-    def send(self, files: List[str]):
+    def send(self, file_path: str):
         """Alias for the play method.
 
-        :param files: List of file paths or URLs to play
-        :type files: List[str]
+        :param file_path: Path to local audio file
+        :type file_path: str
         :return: True if playback started successfully, False otherwise
         :rtype: bool
         
@@ -698,22 +651,9 @@ class PiWave:
            This is an alias for :meth:`play` for backward compatibility.
         
         Example:
-            >>> pw.send(['song1.mp3', 'song2.wav'])
+            >>> pw.send('song.mp3')
         """
-        return self.play(files)
-
-    def restart(self):
-        """Restart playback from the beginning of the playlist.
-
-        Resets the current position to the first track and starts playback.
-        Only works if there are files in the playlist.
-        
-        Example:
-            >>> pw.restart()
-        """
-        if self.playlist:
-            self.current_index = 0
-            self.play()
+        return self.play(file_path)
 
 if __name__ == "__main__":
     Log.header("PiWave Radio Module")
