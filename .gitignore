@@ -1,8 +1,8 @@
 *
 
 # main module
-!/piwave/__init__.py
-!/piwave/piwave.py
+!/piwave/
+!/piwave/**
 
 # utilities
 !/.gitignore
@@ -20,3 +20,5 @@
 
 # workflows
 !/.github/workflows/**
+
+**__pycache__**
