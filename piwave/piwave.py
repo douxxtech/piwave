@@ -1,5 +1,6 @@
-# piwave/pw.py
-# pi_fm_rds is required !!! Check https://github.com/ChristopheJacquet/PiFmRds
+# PiWave is available at https://piwave.xyz
+# Licensed under GPLv3.0, main GitHub repository at https://github.com/douxxtech/piwave/
+# piwave/piwave.py : main entry
 
 import os
 import subprocess
@@ -15,99 +16,8 @@ from pathlib import Path
 from urllib.parse import urlparse
 import atexit
 
-class Log:
-    COLORS = { # absolutely not taken from stackoverflow trust
-        'reset': '\033[0m',
-        'bold': '\033[1m',
-        'underline': '\033[4m',
-        'red': '\033[31m',
-        'green': '\033[32m',
-        'yellow': '\033[33m',
-        'blue': '\033[34m',
-        'magenta': '\033[35m',
-        'cyan': '\033[36m',
-        'white': '\033[37m',
-        'bright_red': '\033[91m',
-        'bright_green': '\033[92m',
-        'bright_yellow': '\033[93m',
-        'bright_blue': '\033[94m',
-        'bright_magenta': '\033[95m',
-        'bright_cyan': '\033[96m',
-        'bright_white': '\033[97m',
-    }
-
-    ICONS = {
-        'success': 'OK',
-        'error': 'ERR',
-        'warning': 'WARN',
-        'info': 'INFO',
-        'client': 'CLIENT',
-        'server': 'SERVER',
-        'file': 'FILE',
-        'broadcast': 'BCAST',
-        'version': 'VER',
-        'update': 'UPD',
-    }
-
-    SILENT = False
-
-    @classmethod
-    def config(cls, silent: bool = False):
-        cls.SILENT = silent
-
-    @classmethod
-    def print(cls, message: str, style: str = '', icon: str = '', end: str = '\n'):
-
-        if cls.SILENT: return
-
-        color = cls.COLORS.get(style, '')
-        icon_char = cls.ICONS.get(icon, '')
-        if icon_char:
-            if color:
-                print(f"{color}[{icon_char}]\033[0m {message}", end=end)
-            else:
-                print(f"[{icon_char}] {message}", end=end)
-        else:
-            if color:
-                print(f"{color}{message}\033[0m", end=end)
-            else:
-                print(f"{message}", end=end)
-        sys.stdout.flush()
-
-    @classmethod
-    def header(cls, text: str):
-        cls.print(text, 'bright_blue', end='\n\n')
-        sys.stdout.flush()
-
-    @classmethod
-    def section(cls, text: str):
-        cls.print(f" {text} ", 'bright_blue', end='')
-        cls.print("─" * (len(text) + 2), 'blue', end='\n\n')
-        sys.stdout.flush()
-
-    @classmethod
-    def success(cls, message: str):
-        cls.print(message, 'bright_green', 'success')
-
-    @classmethod
-    def error(cls, message: str):
-        cls.print(message, 'bright_red', 'error')
-
-    @classmethod
-    def warning(cls, message: str):
-        cls.print(message, 'bright_yellow', 'warning')
-
-    @classmethod
-    def info(cls, message: str):
-        cls.print(message, 'bright_cyan', 'info')
-
-    @classmethod
-    def file_message(cls, message: str):
-        cls.print(message, 'yellow', 'file')
-
-    @classmethod
-    def broadcast_message(cls, message: str):
-        cls.print(message, 'bright_magenta', 'broadcast')
+from .backends import discover_backends, backends, get_best_backend, search_backends, list_backends
+from .logger import Log
 
 class PiWaveError(Exception):
     pass
@@ -121,6 +31,7 @@ class PiWave:
                  debug: bool = False,
                  silent: bool = False,
                  loop: bool = False,
+                 backend: str = "auto",
                  on_track_change: Optional[Callable] = None,
                  on_error: Optional[Callable] = None):
         """Initialize PiWave FM transmitter.
@@ -139,6 +50,8 @@ class PiWave:
         :type silent: bool
         :param loop: Loop the current track continuously (default: False)
         :type loop: bool
+        :param backend: Chose a specific backend to handle the broadcast (default: auto)
+        :type backend: str
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -162,21 +75,47 @@ class PiWave:
         self.current_file: Optional[str] = None
         self.is_playing = False
         self.is_stopped = False
-        
         self.current_process: Optional[subprocess.Popen] = None
         self.playback_thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
-        
         self.temp_dir = tempfile.mkdtemp(prefix="piwave_")
-
+        
         Log.config(silent=silent)
-        
-        self.pi_fm_rds_path = self._find_pi_fm_rds_path()
-        
-        self._validate_environment()
-        
-        atexit.register(self.cleanup)
 
+        self._validate_environment()
+        atexit.register(self.cleanup)
+        
+        discover_backends()
+
+        if backend == "auto":
+            backend_name = get_best_backend("file_broadcast", self.frequency)
+            if not backend_name:
+                available = list(backends.keys())
+                raise PiWaveError(f"No suitable backend found for {self.frequency}MHz. Available backends: {available}")
+        else:
+            if backend not in backends:
+                available = list(backends.keys())
+                raise PiWaveError(f"Backend '{backend}' not available. Available: {available}. Use 'python3 -m piwave search' to refresh.")
+            
+            # Validate that the chosen backend supports the frequency
+            backend_instance = backends[backend]()
+            min_freq, max_freq = backend_instance.frequency_range
+            if not (min_freq <= self.frequency <= max_freq):
+                raise PiWaveError(f"Backend '{backend}' doesn't support {self.frequency}MHz (supports {min_freq}-{max_freq}MHz)")
+            
+            backend_name = backend
+
+        self.backend_name = backend_name
+        self.backend = backends[backend_name](
+            frequency=self.frequency,
+            ps=self.ps,
+            rt=self.rt,
+            pi=self.pi
+        )
+
+        min_freq, max_freq = self.backend.frequency_range
+        rds_support = "with RDS" if self.backend.supports_rds else "no RDS"
+        Log.info(f"Using {self.backend.name} backend ({min_freq}-{max_freq}MHz, {rds_support})")
         
         Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
 
@@ -325,42 +264,38 @@ class PiWave:
             Log.error(f"Could not determine duration for {wav_file}")
             return False
 
-        cmd = [
-            'sudo', self.pi_fm_rds_path,
-            '-freq', str(self.frequency),
-            '-ps', self.ps,
-            '-rt', self.rt,
-            '-pi', self.pi,
-            '-audio', wav_file
-        ]
-
         try:
+            # update settings
+            self.backend.frequency = self.frequency
+            self.backend.ps = self.ps
+            self.backend.rt = self.rt
+            self.backend.pi = self.pi
+            
+            # validate frequency
+            min_freq, max_freq = self.backend.frequency_range
+            if not (min_freq <= self.frequency <= max_freq):
+                raise PiWaveError(f"Current backend '{self.backend.name}' doesn't support {self.frequency}MHz (supports {min_freq}-{max_freq}MHz). Use update() to change backend or frequency.")
+            
+            
             loop_status = "looping" if self.loop else f"Duration: {duration:.1f}s"
-            Log.broadcast_message(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz")
-            self.current_process = subprocess.Popen(
-                cmd,
-                stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid
-            )
+            rds_info = f" (PS: {self.ps})" if self.backend.supports_rds and self.ps else ""
+            Log.broadcast_message(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz{rds_info}")
+            
+            self.current_process = self.backend.play_file(wav_file)
 
             if self.on_track_change:
                 self.on_track_change(wav_file)
 
             if self.loop:
-                # if looping is enabled, let pi_fm_rds handle the looping
-                # and just wait for stop event
                 while not self.stop_event.is_set():
                     if self.stop_event.wait(timeout=0.1):
                         self._stop_current_process()
                         return False
                     
-                    # check if process exists cuz why not
                     if self.current_process.poll() is not None:
                         Log.error("Process ended unexpectedly while looping")
                         return False
             else:
-                # if not looping wait for stopevent or end of file
                 start_time = time.time()
                 while True:
                     if self.stop_event.wait(timeout=0.1):
@@ -527,6 +462,7 @@ class PiWave:
                debug: Optional[bool] = None,
                silent: Optional[bool] = None,
                loop: Optional[bool] = None,
+               backend: Optional[str] = None,
                on_track_change: Optional[Callable] = None,
                on_error: Optional[Callable] = None):
         """Update PiWave settings.
@@ -545,6 +481,8 @@ class PiWave:
         :type silent: Optional[bool]
         :param loop: Loop the current track continuously
         :type loop: Optional[bool]
+        :param backend: Backend used to broadcast
+        :type backend: Optional[str]
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -558,6 +496,35 @@ class PiWave:
             >>> pw.update(rt="Updated radio text", debug=True, loop=True)
         """
         updated_settings = []
+
+        freq_to_use = frequency if frequency is not None else self.frequency
+
+        if backend is not None:
+            if backend == "auto":
+                backend_name = get_best_backend("file_broadcast", freq_to_use)
+                if not backend_name:
+                    available = list(backends.keys())
+                    raise PiWaveError(f"No suitable backend found for {freq_to_use}MHz. Available: {available}")
+            else:
+                if backend not in backends:
+                    available = list(backends.keys())
+                    raise PiWaveError(f"Backend '{backend}' not available. Available: {available}")
+                backend_name = backend
+
+            backend_instance = backends[backend_name](
+                frequency=freq_to_use,
+                ps=ps or self.ps,
+                rt=rt or self.rt,
+                pi=pi or self.pi
+            )
+
+            min_freq, max_freq = backend_instance.frequency_range
+            if not (min_freq <= freq_to_use <= max_freq):
+                raise PiWaveError(f"Backend '{backend_name}' doesn't support {freq_to_use}MHz (supports {min_freq}-{max_freq}MHz)")
+
+            self.backend_name = backend_name
+            self.backend = backend_instance
+            updated_settings.append(f"backend: {backend_name}")
         
         if frequency is not None:
             self.frequency = frequency
@@ -643,6 +610,10 @@ class PiWave:
         - **is_playing** (bool): Whether playback is active
         - **frequency** (float): Current broadcast frequency
         - **current_file** (str|None): Path of currently playing file
+        - **current_backend** (str): Currently used backend
+        - **backend_frequency_range** (str): Frequency range supported by the backend
+        - **backend_supports_rds** (bool): Backend support of Radio Data System
+        - **avalible_backends** (list): List of avalible backends
         - **ps** (str): Program Service name
         - **rt** (str): Radio Text message
         - **pi** (str): Program Identification code
@@ -658,6 +629,10 @@ class PiWave:
             'is_playing': self.is_playing,
             'frequency': self.frequency,
             'current_file': self.current_file,
+            'current_backend': self.backend_name,
+            'backend_frequency_range': f"{self.backend.frequency_range[0]}-{self.backend.frequency_range[1]}MHz",
+            'backend_supports_rds': self.backend.supports_rds,
+            'available_backends': list(backends.keys()),
             'ps': self.ps,
             'rt': self.rt,
             'pi': self.pi,
