@@ -114,42 +114,6 @@ curl -sL https://setup.piwave.xyz/uninstall | sudo bash
    make
    ```
 
-## Backend Management
-
-### CLI Commands
-
-```bash
-# Search for available backends on system
-python3 -m piwave search
-
-# List cached backends
-python3 -m piwave list
-
-# Manually add backend executable path
-python3 -m piwave add pi_fm_rds /path/to/pi_fm_rds
-
-# Show package information
-python3 -m piwave info
-
-# Broadcast a file directly
-python3 -m piwave broadcast song.mp3 --frequency 101.5 --ps "MyRadio"
-```
-
-### Programmatic Backend Discovery
-
-```python
-from piwave.backends import discover_backends, list_backends, search_backends
-
-# Load cached backends
-discover_backends()
-
-# Search for new backends (ignores cache)
-search_backends()
-
-# List available backends with details
-backends_info = list_backends()
-```
-
 ## Quick Start
 
 ### Basic Usage
@@ -228,6 +192,44 @@ print(f"Current backend: {status['current_backend']}")
 print(f"Backend supports RDS: {status['backend_supports_rds']}")
 print(f"Frequency range: {status['backend_frequency_range']}")
 ```
+
+
+## Backend Management
+
+### CLI Commands
+
+```bash
+# Search for available backends on system
+python3 -m piwave search
+
+# List cached backends
+python3 -m piwave list
+
+# Manually add backend executable path
+python3 -m piwave add pi_fm_rds /path/to/pi_fm_rds
+
+# Show package information
+python3 -m piwave info
+
+# Broadcast a file directly
+python3 -m piwave broadcast song.mp3 --frequency 101.5 --ps "MyRadio"
+```
+
+### Programmatic Backend Discovery
+
+```python
+from piwave.backends import discover_backends, list_backends, search_backends
+
+# Load cached backends
+discover_backends()
+
+# Search for new backends (ignores cache)
+search_backends()
+
+# List available backends with details
+backends_info = list_backends()
+```
+
 
 ## Complete Examples
 
