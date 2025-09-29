@@ -21,13 +21,20 @@ def get_best_backend(mode: str, frequency: float):
                 return "pi_fm_rds"
             elif "fm_transmitter" in backends:
                 return "fm_transmitter"
-        
         else:
             if "fm_transmitter" in backends:
                 return "fm_transmitter"
             elif "pi_fm_rds" in backends:
                 return "pi_fm_rds"
     
+    elif mode == "live_broadcast":
+        if "fm_transmitter" in backends:
+            backend = backends["fm_transmitter"]()
+            min_freq, max_freq = backend.frequency_range
+            if min_freq <= frequency <= max_freq:
+                return "fm_transmitter"
+        
+        return None
     
     return None
 

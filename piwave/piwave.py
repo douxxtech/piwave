@@ -10,7 +10,7 @@ import time
 
 import tempfile
 import shutil
-import sys
+import queue
 from typing import Optional, Callable
 from pathlib import Path
 from urllib.parse import urlparse
@@ -24,16 +24,17 @@ class PiWaveError(Exception):
 
 class PiWave:
     def __init__(self, 
-                 frequency: float = 90.0, 
-                 ps: str = "PiWave", 
-                 rt: str = "PiWave: The best python module for managing your pi radio", 
-                 pi: str = "FFFF", 
-                 debug: bool = False,
-                 silent: bool = False,
-                 loop: bool = False,
-                 backend: str = "auto",
-                 on_track_change: Optional[Callable] = None,
-                 on_error: Optional[Callable] = None):
+                frequency: float = 90.0, 
+                ps: str = "PiWave", 
+                rt: str = "PiWave: The best python module for managing your pi radio", 
+                pi: str = "FFFF", 
+                debug: bool = False,
+                silent: bool = False,
+                loop: bool = False,
+                backend: str = "auto",
+                used_for: str = "file_broadcast",
+                on_track_change: Optional[Callable] = None,
+                on_error: Optional[Callable] = None):
         """Initialize PiWave FM transmitter.
 
         :param frequency: FM frequency to broadcast on (80.0-108.0 MHz)
@@ -50,7 +51,9 @@ class PiWave:
         :type silent: bool
         :param loop: Loop the current track continuously (default: False)
         :type loop: bool
-        :param backend: Chose a specific backend to handle the broadcast (default: auto)
+        :param backend: Chose a specific backend to handle the broadcast (default: auto). Supports `pi_fm_rds`, `fm_transmitter` and `auto`
+        :type backend: str
+        :param backend: Give the main use for the current instance, will be used if backend: auto (default: file_broadcast). Supports `file_broadcast` and `live_broadcast`
         :type backend: str
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
@@ -59,7 +62,7 @@ class PiWave:
         :raises PiWaveError: If not running on Raspberry Pi or without root privileges
         
         .. note::
-           This class requires pi_fm_rds to be installed and accessible.
+           This class requires pi_fm_rds or fm_transmitter to be installed and accessible.
            Must be run on a Raspberry Pi with root privileges.
         """
         
@@ -79,6 +82,10 @@ class PiWave:
         self.playback_thread: Optional[threading.Thread] = None
         self.stop_event = threading.Event()
         self.temp_dir = tempfile.mkdtemp(prefix="piwave_")
+
+        self.is_live_streaming = False
+        self.live_thread: Optional[threading.Thread] = None
+        self.audio_queue: Optional[queue.Queue] = None
         
         Log.config(silent=silent)
 
@@ -87,11 +94,13 @@ class PiWave:
         
         discover_backends()
 
+        self.backend_use = used_for
+
         if backend == "auto":
-            backend_name = get_best_backend("file_broadcast", self.frequency)
+            backend_name = get_best_backend(self.backend_use, self.frequency)
             if not backend_name:
                 available = list(backends.keys())
-                raise PiWaveError(f"No suitable backend found for {self.frequency}MHz. Available backends: {available}")
+                raise PiWaveError(f"No suitable backend found for {self.frequency}MHz and {self.backend_use} mode. Available backends: {available}")
         else:
             if backend not in backends:
                 available = list(backends.keys())
@@ -112,6 +121,7 @@ class PiWave:
             rt=self.rt,
             pi=self.pi
         )
+
 
         min_freq, max_freq = self.backend.frequency_range
         rds_support = "with RDS" if self.backend.supports_rds else "no RDS"
@@ -255,7 +265,7 @@ class PiWave:
         except (subprocess.CalledProcessError, subprocess.TimeoutExpired, ValueError):
             return 0.0
 
-    def _play_wav(self, wav_file: str) -> bool:
+    def _play_file(self, wav_file: str) -> bool:
         if self.stop_event.is_set():
             return False
 
@@ -315,6 +325,119 @@ class PiWave:
                 self.on_error(e)
             self._stop_current_process()
             return False
+        
+
+    def _play_live(self, audio_source, sample_rate: int, channels: int, chunk_size: int) -> bool:
+        if self.is_playing or self.is_live_streaming:
+            self.stop()
+        
+        if not self.backend.supports_live_streaming:
+            raise PiWaveError(
+                f"Backend '{self.backend_name}' doesn't support live streaming. Try using fm_transmitter instead.")
+
+        
+        min_freq, max_freq = self.backend.frequency_range
+        if not (min_freq <= self.frequency <= max_freq):
+            raise PiWaveError(
+                f"Backend '{self.backend_name}' doesn't support {self.frequency}MHz"
+            )
+        
+        self.stop_event.clear()
+        self.is_live_streaming = True
+        self.audio_queue = queue.Queue(maxsize=20)
+        
+        try:
+            cmd = self.backend.build_live_command()
+            if not cmd:
+                raise PiWaveError(f"Backend doesn't support live streaming") # since we checked before, we shouldnt get this but meh
+            
+            self.current_process = subprocess.Popen(
+                cmd,
+                stdin=subprocess.PIPE,
+                stdout=subprocess.PIPE,
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setsid
+            )
+        except Exception as e:
+            Log.error(f"Failed to start live stream: {e}")
+            self.is_live_streaming = False
+            if self.on_error:
+                self.on_error(e)
+            return False
+        
+        self.live_thread = threading.Thread(
+            target=self._live_producer_worker,
+            args=(audio_source, chunk_size)
+        )
+        self.live_thread.daemon = True
+        self.live_thread.start()
+        
+        consumer_thread = threading.Thread(target=self._live_consumer_worker)
+        consumer_thread.daemon = True
+        consumer_thread.start()
+        
+        Log.broadcast_message(f"Live streaming at {self.frequency}MHz ({sample_rate}Hz, {channels}ch)")
+        return True
+    
+    def _live_producer_worker(self, audio_source, chunk_size: int):
+        # producer: reads from audio source, puts in queue; consumer will play it
+        try:
+            if hasattr(audio_source, '__iter__') and not isinstance(audio_source, (str, bytes)):
+                for chunk in audio_source:
+                    if self.stop_event.is_set():
+                        break
+                    if chunk:
+                        self.audio_queue.put(chunk, timeout=1)
+            
+            elif callable(audio_source):
+                while not self.stop_event.is_set():
+                    chunk = audio_source()
+                    if not chunk:
+                        break
+                    self.audio_queue.put(chunk, timeout=1)
+            
+            elif hasattr(audio_source, 'read'):
+                while not self.stop_event.is_set():
+                    chunk = audio_source.read(chunk_size)
+                    if not chunk:
+                        break
+                    self.audio_queue.put(chunk, timeout=1)
+            
+        except Exception as e:
+            Log.error(f"Producer error: {e}")
+            if self.on_error:
+                self.on_error(e)
+        finally:
+            self.audio_queue.put(None)
+
+    def _live_consumer_worker(self):
+        # consumer reads from queue and puts in process
+        try:
+            while not self.stop_event.is_set():
+                try:
+                    chunk = self.audio_queue.get(timeout=0.1)
+                    if chunk is None:
+                        break
+                    
+                    if self.current_process and self.current_process.stdin:
+                        self.current_process.stdin.write(chunk)
+                        self.current_process.stdin.flush()
+                    
+                except queue.Empty:
+                    continue
+                except BrokenPipeError:
+                    Log.error(f"Stream process terminated: make sure that the stream you provided compiles with {self.backend_name} stdin support.")
+                    break
+                except Exception as e:
+                    Log.error(f"Write error: {e}")
+                    break
+        finally:
+            if self.current_process and self.current_process.stdin:
+                try:
+                    self.current_process.stdin.close()
+                except:
+                    pass
+            self.is_live_streaming = False
 
 
     def _stop_current_process(self):
@@ -365,38 +488,28 @@ class PiWave:
         self.stop()
         os._exit(0)
 
-    def play(self, file_path: str) -> bool:
-        """Start playing the specified audio file.
-
-        :param file_path: Path to local audio file
-        :type file_path: str
-        :return: True if playback started successfully, False otherwise
+    def play(self, source, sample_rate: int = 44100, channels: int = 2, chunk_size: int = 4096):
+        """Play audio from file or live source.
+        
+        :param source: Either a file path (str) or live audio source (generator/callable/file-like)
+        :param sample_rate: Sample rate for live audio (ignored for files)
+        :param channels: Channels for live audio (ignored for files)
+        :param chunk_size: Chunk size for live audio (ignored for files)
+        :return: True if playback/streaming started successfully
         :rtype: bool
         
-        .. note::
-           Files are automatically converted to WAV format if needed.
-           Only local files are supported. If loop is enabled, the file will
-           repeat continuously until stop() is called.
-        
         Example:
-            >>> pw.play('song.mp3')
-            >>> pw.play('audio.wav')
+            >>> pw.play('song.mp3')  # File playback
+            >>> pw.play(mic_generator())  # Live streaming
         """
-        
-        if self.is_playing:
-            self.stop()
-        
-        self.current_file = file_path
-        self.stop_event.clear()
-        self.is_stopped = False
-        self.is_playing = True
-        
-        self.playback_thread = threading.Thread(target=self._playback_worker)
-        self.playback_thread.daemon = True
-        self.playback_thread.start()
-        
-        Log.success("Playback started")
-        return True
+
+        # autodetect if source is live or file
+        if isinstance(source, str):
+            # file (string)
+            return self._play_file(source)
+        else:
+            # live
+            return self._play_live(source, sample_rate, channels, chunk_size)
 
     def stop(self):
         """Stop all playback and streaming.
@@ -407,14 +520,21 @@ class PiWave:
         Example:
             >>> pw.stop()
         """
-        if not self.is_playing:
+        if not self.is_playing and not self.is_live_streaming:
             return
         
-        Log.warning("Stopping playback...")
-
+        Log.warning("Stopping...")
+        
         self.is_stopped = True
         self.stop_event.set()
-
+        
+        if self.audio_queue:
+            while not self.audio_queue.empty():
+                try:
+                    self.audio_queue.get_nowait()
+                except queue.Empty:
+                    break
+        
         if self.current_process:
             try:
                 os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
@@ -423,12 +543,15 @@ class PiWave:
                 pass
             finally:
                 self.current_process = None
-
+        
         if self.playback_thread and self.playback_thread.is_alive():
             self.playback_thread.join(timeout=5)
-
+        if self.live_thread and self.live_thread.is_alive():
+            self.live_thread.join(timeout=3)
+        
         self.is_playing = False
-        Log.success("Playback stopped")
+        self.is_live_streaming = False
+        Log.success("Stopped")
 
     def pause(self):
         """Pause the current playback.
@@ -455,16 +578,17 @@ class PiWave:
             self.play(self.current_file)
 
     def update(self, 
-               frequency: Optional[float] = None,
-               ps: Optional[str] = None,
-               rt: Optional[str] = None,
-               pi: Optional[str] = None,
-               debug: Optional[bool] = None,
-               silent: Optional[bool] = None,
-               loop: Optional[bool] = None,
-               backend: Optional[str] = None,
-               on_track_change: Optional[Callable] = None,
-               on_error: Optional[Callable] = None):
+                frequency: Optional[float] = None,
+                ps: Optional[str] = None,
+                rt: Optional[str] = None,
+                pi: Optional[str] = None,
+                debug: Optional[bool] = None,
+                silent: Optional[bool] = None,
+                loop: Optional[bool] = None,
+                backend: Optional[str] = None,
+                used_for: Optional[str] = None,
+                on_track_change: Optional[Callable] = None,
+                on_error: Optional[Callable] = None):
         """Update PiWave settings.
 
         :param frequency: FM frequency to broadcast on (80.0-108.0 MHz)
@@ -483,6 +607,8 @@ class PiWave:
         :type loop: Optional[bool]
         :param backend: Backend used to broadcast
         :type backend: Optional[str]
+        :param backend: Give the main use for the current instance, will be used if backend: auto. Supports `file_broadcast` and `live_broadcast`
+        :type backend: Optional[str]
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -499,9 +625,12 @@ class PiWave:
 
         freq_to_use = frequency if frequency is not None else self.frequency
 
+        if used_for is not None:
+            self.backend_use = used_for
+
         if backend is not None:
             if backend == "auto":
-                backend_name = get_best_backend("file_broadcast", freq_to_use)
+                backend_name = get_best_backend(self.backend_use, freq_to_use)
                 if not backend_name:
                     available = list(backends.keys())
                     raise PiWaveError(f"No suitable backend found for {freq_to_use}MHz. Available: {available}")
@@ -608,6 +737,7 @@ class PiWave:
         The returned dictionary contains:
         
         - **is_playing** (bool): Whether playback is active
+        - **is_live_streaming** (bool): Whether live playback is active
         - **frequency** (float): Current broadcast frequency
         - **current_file** (str|None): Path of currently playing file
         - **current_backend** (str): Currently used backend
@@ -627,6 +757,7 @@ class PiWave:
         """
         return {
             'is_playing': self.is_playing,
+            'is_live_streaming': self.is_live_streaming,
             'frequency': self.frequency,
             'current_file': self.current_file,
             'current_backend': self.backend_name,

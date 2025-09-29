@@ -38,6 +38,11 @@ class Backend(ABC):
     @abstractmethod  
     def supports_rds(self):
         pass
+
+    @property
+    @abstractmethod
+    def supports_live_streaming(self):
+        pass
     
     @property 
     def cache_file(self):
@@ -204,6 +209,10 @@ class Backend(ABC):
     
     @abstractmethod
     def build_command(self, wav_file: str):
+        pass
+
+    @abstractmethod
+    def build_live_command(self):
         pass
     
     def validate_settings(self):

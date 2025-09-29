@@ -19,6 +19,10 @@ class PiFmRdsBackend(Backend):
     def supports_rds(self):
         return True
     
+    @property
+    def supports_live_streaming(self):
+        return False
+    
     def _get_executable_name(self):
         return "pi_fm_rds"
     
@@ -40,3 +44,6 @@ class PiFmRdsBackend(Backend):
             cmd.extend(['-pi', self.pi])
             
         return cmd
+
+    def build_live_command(self):
+        return None # not supported sadly
