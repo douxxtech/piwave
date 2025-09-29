@@ -10,6 +10,7 @@
 - **Multi-Backend Architecture**: Supports multiple backends for different actions
 - **Wide Frequency Support**: 1-250 MHz coverage through different backends
 - **RDS Support**: Program Service, Radio Text, and Program Identifier broadcasting
+- **Live Stream Support**: Broadcast live from a stream source.
 - **Smart Backend Selection**: Automatically chooses the best backend to suit your needs
 - **Audio Format Support**: Converts most audio formats (MP3, FLAC, M4A, etc.) to WAV
 - **Real-time Settings Updates**: Change frequency, RDS data, and settings without restart
@@ -24,12 +25,14 @@
 ### PiFmRds Backend
 - **Frequency Range**: 80.0 - 108.0 MHz (Standard FM band)
 - **RDS Support**: ✅ Full support (PS, RT, PI)
+- **Live Support**: ❌ No live support
 - **Repository**: [ChristopheJacquet/PiFmRds](https://github.com/ChristopheJacquet/PiFmRds)
 - **Best For**: Standard FM broadcasting with RDS features
 
 ### FmTransmitter Backend  
 - **Frequency Range**: 1.0 - 250.0 MHz (Extended range)
 - **RDS Support**: ❌ No RDS support
+- **Live Support**: ✅ Experimental support
 - **Repository**: [markondej/fm_transmitter](https://github.com/markondej/fm_transmitter)
 - **Best For**: Non-standard frequencies and experimental broadcasting
 
@@ -418,16 +421,17 @@ if __name__ == "__main__":
 
 ```python
 PiWave(
-    frequency=90.0,           # Broadcast frequency (1.0-250.0 MHz)
-    ps="PiWave",             # Program Service name (max 8 chars)
-    rt="PiWave: ...",        # Radio Text (max 64 chars)
-    pi="FFFF",               # Program Identifier (4 hex digits)
-    debug=False,             # Enable debug logging
-    silent=False,            # Disable all logging
-    loop=False,              # Loop current track continuously
-    backend="auto",          # Backend selection ("auto", "pi_fm_rds", "fm_transmitter")
-    on_track_change=None,    # Callback for track changes
-    on_error=None            # Callback for errors
+    frequency=90.0,            # Broadcast frequency (1.0-250.0 MHz)
+    ps="PiWave",               # Program Service name (max 8 chars)
+    rt="PiWave: ...",          # Radio Text (max 64 chars)
+    pi="FFFF",                 # Program Identifier (4 hex digits)
+    debug=False,               # Enable debug logging
+    silent=False,              # Disable all logging
+    loop=False,                # Loop current track continuously
+    backend="auto",            # Backend selection ("auto", "pi_fm_rds", "fm_transmitter")
+    used_for="file_broadcast", # Backend main purpose, used if backend = auto ("file_broadcast", "live_broadcast")
+    on_track_change=None,      # Callback for track changes
+    on_error=None              # Callback for errors
 )
 ```
 
@@ -470,6 +474,7 @@ status = pw.get_status()
 # Returns:
 {
     'is_playing': bool,
+    'is_live_streaming': bool,
     'frequency': float,
     'current_file': str|None,
     'current_backend': str,
