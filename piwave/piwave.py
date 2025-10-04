@@ -326,6 +326,28 @@ class PiWave:
             self._stop_current_process()
             return False
         
+    def _playback_worker_wrapper(self):
+        # wrapper for non-blocking playback
+        try:
+            wav_file = self._convert_to_wav(self.current_file)
+            if not wav_file:
+                Log.error(f"Failed to convert {self.current_file}")
+                self.is_playing = False
+                return
+
+            if not os.path.exists(wav_file):
+                Log.error(f"File not found: {wav_file}")
+                self.is_playing = False
+                return
+
+            self._play_file(wav_file)
+        except Exception as e:
+            Log.error(f"Playback error: {e}")
+            if self.on_error:
+                self.on_error(e)
+        finally:
+            self.is_playing = False
+        
 
     def _play_live(self, audio_source, sample_rate: int, channels: int, chunk_size: int) -> bool:
         if self.is_playing or self.is_live_streaming:
@@ -488,13 +510,14 @@ class PiWave:
         self.stop()
         os._exit(0)
 
-    def play(self, source, sample_rate: int = 44100, channels: int = 2, chunk_size: int = 4096):
+    def play(self, source, sample_rate: int = 44100, channels: int = 2, chunk_size: int = 4096, blocking: bool = False):
         """Play audio from file or live source.
         
         :param source: Either a file path (str) or live audio source (generator/callable/file-like)
         :param sample_rate: Sample rate for live audio (ignored for files)
         :param channels: Channels for live audio (ignored for files)
         :param chunk_size: Chunk size for live audio (ignored for files)
+        :param blocking: If the playback should be blocking or not (ignored for live, always non-blocking)
         :return: True if playback/streaming started successfully
         :rtype: bool
         
@@ -506,7 +529,23 @@ class PiWave:
         # autodetect if source is live or file
         if isinstance(source, str):
             # file (string)
-            return self._play_file(source)
+            if blocking:
+                return self._play_file(source)
+            else:
+                if self.is_playing:
+                    self.stop()
+                
+                self.current_file = source
+                self.is_playing = True
+                self.stop_event.clear()
+                
+                self.playback_thread = threading.Thread(
+                    target=self._playback_worker_wrapper,
+                    daemon=True
+                )
+                self.playback_thread.start()
+                return True
+        
         else:
             # live
             return self._play_live(source, sample_rate, channels, chunk_size)
