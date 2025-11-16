@@ -551,7 +551,8 @@ class PiWave:
         Example:
             >>> pw.stop()
         """
-        if not self.is_playing and not self.is_live_streaming:
+        
+        if not self.is_playing and not self.is_live_streaming and not self.current_process:
             return
         
         Log.warning("Stopping...")
