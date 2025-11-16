@@ -90,7 +90,6 @@ class PiWave:
         Log.config(silent=silent)
 
         self._validate_environment()
-        atexit.register(self.cleanup)
         
         discover_backends()
 
@@ -465,11 +464,9 @@ class PiWave:
     def _stop_current_process(self):
         if self.current_process:
             try:
-                Log.info("Stopping current process...")
                 os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
                 self.current_process.wait(timeout=5)
             except (ProcessLookupError, subprocess.TimeoutExpired):
-                Log.warning("Forcing kill of current process")
                 try:
                     os.killpg(os.getpgid(self.current_process.pid), signal.SIGKILL)
                 except ProcessLookupError:
@@ -820,8 +817,6 @@ class PiWave:
         
         Log.info("Cleanup completed")
 
-    def __del__(self):
-        self.cleanup()
 
     def send(self, file_path: str):
         """Alias for the play method.
