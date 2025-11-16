@@ -13,10 +13,8 @@ import shutil
 import queue
 from typing import Optional, Callable
 from pathlib import Path
-from urllib.parse import urlparse
-import atexit
 
-from .backends import discover_backends, backends, get_best_backend, search_backends, list_backends
+from .backends import discover_backends, backends, get_best_backend
 from .logger import Log
 
 class PiWaveError(Exception):
@@ -214,7 +212,7 @@ class PiWave:
         if self._is_wav_file(filepath):
             return filepath
         
-        Log.file_message(f"Converting {filepath} to WAV")
+        Log.file(f"Converting {filepath} to WAV")
         
         output_file = f"{os.path.splitext(filepath)[0]}_converted.wav"
         
@@ -288,7 +286,7 @@ class PiWave:
             
             loop_status = "looping" if self.loop else f"Duration: {duration:.1f}s"
             rds_info = f" (PS: {self.ps})" if self.backend.supports_rds and self.ps else ""
-            Log.broadcast_message(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz{rds_info}")
+            Log.broadcast(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz{rds_info}")
             
             self.current_process = self.backend.play_file(wav_file)
 
@@ -397,7 +395,7 @@ class PiWave:
         consumer_thread.daemon = True
         consumer_thread.start()
         
-        Log.broadcast_message(f"Live streaming at {self.frequency}MHz ({sample_rate}Hz, {channels}ch)")
+        Log.broadcast(f"Live streaming at {self.frequency}MHz ({sample_rate}Hz, {channels}ch)")
         return True
     
     def _live_producer_worker(self, audio_source, chunk_size: int):
@@ -741,7 +739,7 @@ class PiWave:
             >>> pw.set_frequency(101.5)
         """
         self.frequency = frequency
-        Log.broadcast_message(f"Frequency changed to {frequency}MHz. Will update on next file's broadcast.")
+        Log.broadcast(f"Frequency changed to {frequency}MHz. Will update on next file's broadcast.")
 
     def set_loop(self, loop: bool):
         """Enable or disable looping for the current track.
@@ -758,7 +756,7 @@ class PiWave:
         """
         self.loop = loop
         loop_status = "enabled" if loop else "disabled"
-        Log.broadcast_message(f"Looping {loop_status}. Will update on next file's broadcast.")
+        Log.broadcast(f"Looping {loop_status}. Will update on next file's broadcast.")
 
     def get_status(self) -> dict:
         """Get current status information.
