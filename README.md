@@ -491,8 +491,11 @@ status = pw.get_status()
 ##### `cleanup()`
 Clean up resources and temporary files.
 
+> [!WARNING]
+> Always clean up behind you! Dropped support of auto-cleanup on version > 2.1.2
+
 ```python
-pw.cleanup()  # Called automatically on object destruction
+pw.cleanup()
 ```
 
 ### Backend Management
