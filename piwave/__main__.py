@@ -72,6 +72,7 @@ def main():
 
         args = parser.parse_args(sys.argv[2:])
 
+        pw = None
         try:
             pw = PiWave(
                 frequency=args.frequency,
@@ -92,9 +93,17 @@ def main():
             except KeyboardInterrupt:
                 pw.stop()
                 Log.info("Broadcast stopped")
+                raise
+
         except PiWaveError as e:
             Log.error(f"PiWaveError: {e}")
             sys.exit(1)
+        except Exception:
+            pass
+        finally:
+            if pw is not None:
+                pw.cleanup()
+
 
     else:
         Log.error(f"Unknown command: {cmd}")
