@@ -505,11 +505,6 @@ class PiWave:
         self._log_debug("Playback worker finished")
 
 
-    def _handle_interrupt(self, signum, frame):
-        Log.warning("Interrupt received, stopping playback...")
-        self.stop()
-        os._exit(0)
-
     def play(self, source, sample_rate: int = 44100, channels: int = 2, chunk_size: int = 4096, blocking: bool = False):
         """Play audio from file or live source.
         
