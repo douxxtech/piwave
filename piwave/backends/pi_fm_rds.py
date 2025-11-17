@@ -33,7 +33,7 @@ class PiFmRdsBackend(Backend):
     def _get_search_paths(self):
         return ["/opt/PiWave/PiFmRds", "/opt", "/usr/local/bin", "/usr/bin", "/bin", "/home"]
     
-    def build_command(self, wav_file: str, loop=bool) -> list:
+    def build_command(self, wav_file: str, loop: bool) -> list:
         cmd = [
             'sudo', self.required_executable,
             '-freq', str(self.frequency),
