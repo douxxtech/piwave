@@ -587,6 +587,10 @@ class CustomBackend(Backend):
     @property
     def supports_rds(self):
         return True  # RDS capability
+
+    @property
+    def supports_loop(self):
+        return True  # loop support capability
     
     def _get_executable_name(self):
         return "my_transmitter"
@@ -594,10 +598,13 @@ class CustomBackend(Backend):
     def _get_search_paths(self):
         return ["/opt", "/usr/local/bin", "/usr/bin"]
     
-    def build_command(self, wav_file: str):
+    def build_command(self, wav_file: str, loop: bool):
         cmd = ['sudo', self.required_executable, '-f', str(self.frequency)]
         if self.supports_rds and self.ps:
             cmd.extend(['-ps', self.ps])
+
+        if self.supports_rds and loop:
+            cmd.extend(['-loop'])
         cmd.append(wav_file)
         return cmd
 ```

@@ -13,7 +13,7 @@ class PiFmRdsBackend(Backend):
     
     @property
     def frequency_range(self):
-        return (80.0, 108.0)  # standard fm band with a bit less bcs it still kinda works
+        return (76.0, 108.0)  # taken from pi_fm_rds.c
     
     @property
     def supports_rds(self):
@@ -23,13 +23,17 @@ class PiFmRdsBackend(Backend):
     def supports_live_streaming(self):
         return False
     
+    @property
+    def supports_loop(self):
+        return False
+    
     def _get_executable_name(self):
         return "pi_fm_rds"
     
     def _get_search_paths(self):
         return ["/opt/PiWave/PiFmRds", "/opt", "/usr/local/bin", "/usr/bin", "/bin", "/home"]
     
-    def build_command(self, wav_file: str) -> list:
+    def build_command(self, wav_file: str, loop=bool) -> list:
         cmd = [
             'sudo', self.required_executable,
             '-freq', str(self.frequency),

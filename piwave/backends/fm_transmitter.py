@@ -23,13 +23,17 @@ class FmTransmitterBackend(Backend):
     def supports_live_streaming(self):
         return True
     
+    @property
+    def supports_loop(self):
+        return False
+    
     def _get_executable_name(self):
         return "fm_transmitter"
     
     def _get_search_paths(self):
         return ["/opt/PiWave/fm_transmitter", "/opt", "/usr/local/bin", "/usr/bin", "/bin", "/home"]
     
-    def build_command(self, wav_file: str):
+    def build_command(self, wav_file: str, loop: bool):
         return [
             'sudo', self.required_executable,
             '-f', str(self.frequency),

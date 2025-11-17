@@ -43,6 +43,11 @@ class Backend(ABC):
     @abstractmethod
     def supports_live_streaming(self):
         pass
+
+    @property
+    @abstractmethod
+    def supports_loop(self):
+        pass
     
     @property 
     def cache_file(self):
@@ -208,7 +213,7 @@ class Backend(ABC):
             return False
     
     @abstractmethod
-    def build_command(self, wav_file: str):
+    def build_command(self, wav_file: str, loop: bool):
         pass
 
     @abstractmethod
@@ -219,12 +224,12 @@ class Backend(ABC):
         min_freq, max_freq = self.frequency_range
         return min_freq <= self.frequency <= max_freq
     
-    def play_file(self, wav_file: str) -> subprocess.Popen:
+    def play_file(self, wav_file: str, loop: bool) -> subprocess.Popen:
         if not self.validate_settings():
             min_freq, max_freq = self.frequency_range
             raise BackendError(f"{self.name} supports {min_freq}-{max_freq}MHz, got {self.frequency}MHz")
             
-        cmd = self.build_command(wav_file)
+        cmd = self.build_command(wav_file, loop)
         self.current_process = subprocess.Popen(
             cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
             preexec_fn=os.setsid

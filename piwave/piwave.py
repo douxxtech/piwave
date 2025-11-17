@@ -265,35 +265,37 @@ class PiWave:
     def _play_file(self, wav_file: str) -> bool:
         if self.stop_event.is_set():
             return False
-
+        
         duration = self._get_file_duration(wav_file)
+
         if duration <= 0:
             Log.error(f"Could not determine duration for {wav_file}")
             return False
-
+        
         try:
             # update settings
             self.backend.frequency = self.frequency
             self.backend.ps = self.ps
             self.backend.rt = self.rt
             self.backend.pi = self.pi
-            
+
             # validate frequency
             min_freq, max_freq = self.backend.frequency_range
             if not (min_freq <= self.frequency <= max_freq):
                 raise PiWaveError(f"Current backend '{self.backend.name}' doesn't support {self.frequency}MHz (supports {min_freq}-{max_freq}MHz). Use update() to change backend or frequency.")
-            
-            
+
             loop_status = "looping" if self.loop else f"Duration: {duration:.1f}s"
             rds_info = f" (PS: {self.ps})" if self.backend.supports_rds and self.ps else ""
             Log.broadcast(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz{rds_info}")
-            
-            self.current_process = self.backend.play_file(wav_file)
+
+            self.current_process = self.backend.play_file(wav_file, self.loop)
 
             if self.on_track_change:
                 self.on_track_change(wav_file)
 
-            if self.loop:
+            if self.loop and not self.backend.supports_loop():
+
+                # Only manually loop if the backend does not support it
                 while not self.stop_event.is_set():
                     if self.stop_event.wait(timeout=0.1):
                         self._stop_current_process()
@@ -302,26 +304,24 @@ class PiWave:
                     if self.current_process.poll() is not None:
                         Log.error("Process ended unexpectedly while looping")
                         return False
+                    
             else:
-                start_time = time.time()
-                while True:
+                # fi backend supports looping or we are not looping, just wait for the process to finish
+                while not self.stop_event.is_set():
                     if self.stop_event.wait(timeout=0.1):
                         self._stop_current_process()
                         return False
-
-                    elapsed = time.time() - start_time
-                    if elapsed >= duration:
-                        self._stop_current_process()
+                    if not self.loop and self.current_process.poll() is not None:
                         break
-
             return True
-
+        
         except Exception as e:
             Log.error(f"Error playing {wav_file}: {e}")
             if self.on_error:
                 self.on_error(e)
             self._stop_current_process()
             return False
+
         
     def _playback_worker_wrapper(self):
         # wrapper for non-blocking playback
