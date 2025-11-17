@@ -293,7 +293,7 @@ class PiWave:
             if self.on_track_change:
                 self.on_track_change(wav_file)
 
-            if self.loop and not self.backend.supports_loop():
+            if self.loop and not self.backend.supports_loop:
 
                 # Only manually loop if the backend does not support it
                 while not self.stop_event.is_set():
