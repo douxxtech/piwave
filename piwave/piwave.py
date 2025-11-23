@@ -374,8 +374,7 @@ class PiWave:
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE,
-                preexec_fn=os.setsid
+                stderr=subprocess.PIPE
             )
         except Exception as e:
             Log.error(f"Failed to start live stream: {e}")

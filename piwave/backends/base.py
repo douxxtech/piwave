@@ -231,8 +231,9 @@ class Backend(ABC):
             
         cmd = self.build_command(wav_file, loop)
         self.current_process = subprocess.Popen(
-            cmd, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-            preexec_fn=os.setsid
+            cmd,
+            stdout=subprocess.PIPE,
+            stderr=subprocess.PIPE
         )
         return self.current_process
     
