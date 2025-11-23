@@ -2,11 +2,10 @@
 # Licensed under GPLv3.0, main GitHub repository at https://github.com/douxxtech/piwave/
 # piwave/piwave.py : main entry
 
+import atexit
 import os
 import subprocess
-import signal
 import threading
-import time
 
 import tempfile
 import shutil
@@ -88,6 +87,7 @@ class PiWave:
         Log.config(silent=silent)
 
         self._validate_environment()
+        atexit.register(self._stop_curproc)
         
         discover_backends()
 
