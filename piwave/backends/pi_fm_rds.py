@@ -35,7 +35,7 @@ class PiFmRdsBackend(Backend):
     
     def build_command(self, wav_file: str, loop: bool) -> list:
         cmd = [
-            'sudo', self.required_executable,
+            self.required_executable,
             '-freq', str(self.frequency),
             '-audio', wav_file
         ]

@@ -35,14 +35,14 @@ class FmTransmitterBackend(Backend):
     
     def build_command(self, wav_file: str, loop: bool):
         return [
-            'sudo', self.required_executable,
+            self.required_executable,
             '-f', str(self.frequency),
             wav_file
         ]
     
     def build_live_command(self):
         return [
-            'sudo', self.required_executable,
+            self.required_executable,
             '-f', str(self.frequency),
             '-'
         ]
