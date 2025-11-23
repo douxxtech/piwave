@@ -3,6 +3,9 @@
 <h1>PiWave</h1>
 </div>
 
+> [!CAUTION]
+> `piwave==2.1.6` is broken ! Please use `piwave==2.1.5`
+
 **PiWave** is a Python module designed to manage and control your Raspberry Pi radio using multiple FM transmission backends. It provides a unified interface for broadcasting audio files with multiple backends support and RDS (Radio Data System) support.
 
 ## Features
