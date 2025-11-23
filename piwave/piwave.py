@@ -298,7 +298,7 @@ class PiWave:
                 # Only manually loop if the backend does not support it
                 while not self.stop_event.is_set():
                     if self.stop_event.wait(timeout=0.1):
-                        self._stop_current_process()
+                        self._stop_curproc()
                         return False
                     
                     if self.current_process.poll() is not None:
@@ -309,7 +309,7 @@ class PiWave:
                 # fi backend supports looping or we are not looping, just wait for the process to finish
                 while not self.stop_event.is_set():
                     if self.stop_event.wait(timeout=0.1):
-                        self._stop_current_process()
+                        self._stop_curproc()
                         return False
                     if not self.loop and self.current_process.poll() is not None:
                         break
@@ -319,7 +319,7 @@ class PiWave:
             Log.error(f"Error playing {wav_file}: {e}")
             if self.on_error:
                 self.on_error(e)
-            self._stop_current_process()
+            self._stop_curproc()
             return False
 
         
@@ -374,7 +374,8 @@ class PiWave:
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.PIPE,
-                stderr=subprocess.PIPE
+                stderr=subprocess.PIPE,
+                preexec_fn=os.setpgrp()
             )
         except Exception as e:
             Log.error(f"Failed to start live stream: {e}")
@@ -456,21 +457,6 @@ class PiWave:
                 except:
                     pass
             self.is_live_streaming = False
-
-
-    def _stop_current_process(self):
-        if self.current_process:
-            try:
-                os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
-                self.current_process.wait(timeout=5)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
-                try:
-                    os.killpg(os.getpgid(self.current_process.pid), signal.SIGKILL)
-                except ProcessLookupError:
-                    pass
-            finally:
-                self.current_process = None
-
 
     def _playback_worker(self):
         self._log_debug("Playback worker started")
@@ -564,14 +550,7 @@ class PiWave:
                 except queue.Empty:
                     break
         
-        if self.current_process:
-            try:
-                os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
-                self.current_process.wait(timeout=5)
-            except Exception:
-                pass
-            finally:
-                self.current_process = None
+        self._stop_curproc()
         
         if self.playback_thread and self.playback_thread.is_alive():
             self.playback_thread.join(timeout=5)
@@ -581,6 +560,25 @@ class PiWave:
         self.is_playing = False
         self.is_live_streaming = False
         Log.success("Stopped")
+
+    def _stop_curproc(self):
+        if self.backend.current_process:
+                self.backend.stop()
+        elif self.current_process:
+            # live streaming
+            try:
+                self.current_process.terminate()
+                self.current_process.wait(timeout=5)
+            except subprocess.TimeoutExpired:
+                try:
+                    self.current_process.kill()
+                    self.current_process.wait(timeout=2)
+                except:
+                    pass
+            except ProcessLookupError:
+                pass
+            finally:
+                self.current_process = None
 
     def pause(self):
         """Pause the current playback.
@@ -592,7 +590,7 @@ class PiWave:
             >>> pw.pause()
         """
         if self.is_playing:
-            self._stop_current_process()
+            self._stop_curproc()
             Log.info("Playback paused")
 
     def resume(self):

@@ -233,19 +233,23 @@ class Backend(ABC):
         self.current_process = subprocess.Popen(
             cmd,
             stdout=subprocess.PIPE,
-            stderr=subprocess.PIPE
+            stderr=subprocess.PIPE,
+            preexec_fn=os.setpgrp()
         )
         return self.current_process
     
     def stop(self):
         if self.current_process:
             try:
-                os.killpg(os.getpgid(self.current_process.pid), signal.SIGTERM)
+                self.current_process.terminate()
                 self.current_process.wait(timeout=5)
-            except (ProcessLookupError, subprocess.TimeoutExpired):
+            except subprocess.TimeoutExpired:
                 try:
-                    os.killpg(os.getpgid(self.current_process.pid), signal.SIGKILL)
-                except ProcessLookupError:
+                    self.current_process.kill()
+                    self.current_process.wait(timeout=2)
+                except:
                     pass
+            except ProcessLookupError:
+                pass
             finally:
                 self.current_process = None
