@@ -288,7 +288,8 @@ class PiWave:
             rds_info = f" (PS: {self.ps})" if self.backend.supports_rds and self.ps else ""
             Log.broadcast(f"Playing {wav_file} ({loop_status}) at {self.frequency}MHz{rds_info}")
 
-            self.current_process = self.backend.play_file(wav_file, self.loop)
+            self.backend.play_file(wav_file, self.loop)
+            self.current_process = self.backend.current_process
 
             if self.on_track_change:
                 self.on_track_change(wav_file)
@@ -301,7 +302,7 @@ class PiWave:
                         self._stop_curproc()
                         return False
                     
-                    if self.current_process.poll() is not None:
+                    if self.backend.current_process.poll() is not None:
                         Log.error("Process ended unexpectedly while looping")
                         return False
                     
@@ -311,7 +312,7 @@ class PiWave:
                     if self.stop_event.wait(timeout=0.1):
                         self._stop_curproc()
                         return False
-                    if not self.loop and self.current_process.poll() is not None:
+                    if not self.loop and self.backend.current_process.poll() is not None:
                         break
             return True
         
@@ -374,8 +375,7 @@ class PiWave:
                 cmd,
                 stdin=subprocess.PIPE,
                 stdout=subprocess.DEVNULL,
-                stderr=subprocess.DEVNULL,
-                preexec_fn=os.setpgrp()
+                stderr=subprocess.DEVNULL
             )
         except Exception as e:
             Log.error(f"Failed to start live stream: {e}")

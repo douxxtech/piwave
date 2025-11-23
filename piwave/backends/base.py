@@ -234,8 +234,7 @@ class Backend(ABC):
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
-            stdin=subprocess.DEVNULL,
-            preexec_fn=os.setpgrp()
+            stdin=subprocess.DEVNULL
         )
         return self.current_process
     
