@@ -87,7 +87,6 @@ class PiWave:
         Log.config(silent=silent)
 
         self._validate_environment()
-        atexit.register(self._stop_curproc)
         
         discover_backends()
 
@@ -123,6 +122,8 @@ class PiWave:
         min_freq, max_freq = self.backend.frequency_range
         rds_support = "with RDS" if self.backend.supports_rds else "no RDS"
         Log.info(f"Using {self.backend.name} backend ({min_freq}-{max_freq}MHz, {rds_support})")
+
+        atexit.register(self._stop_curproc)
         
         Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
 
@@ -562,6 +563,9 @@ class PiWave:
         Log.success("Stopped")
 
     def _stop_curproc(self):
+        if not hasattr(self, 'backend'):
+            return
+
         if self.backend.current_process:
                 self.backend.stop()
         elif self.current_process:
