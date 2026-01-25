@@ -12,7 +12,8 @@ class Logger(DLogger):
         'warning': 'WARN',
         'info': 'INFO',
         'file': 'FILE',
-        'broadcast': 'BCAST'
+        'broadcast': 'BCAST',
+        'debug': 'DEBUG'
     }
     
     STYLES = {
@@ -21,10 +22,12 @@ class Logger(DLogger):
         'warning': 'bright_yellow',
         'info': 'bright_cyan',
         'file': 'yellow',
-        'broadcast': 'bright_magenta'
+        'broadcast': 'bright_magenta',
+        'debug': 'orange'
     }
     
     SILENT = False
+    DEBUG = False
     
     def __init__(self):
         # Initialize with prebuilt icons & styles and silent support.
@@ -35,12 +38,17 @@ class Logger(DLogger):
         )
     
     @classmethod
-    def config(self, silent: bool = False):
+    def config(self, silent: bool = False, debug: bool = False):
         self.SILENT = silent
+        self.DEBUG = debug
     
     def print(self, message: str, style: str = '', icon: str = '', end: str = '\n'):
         if self.SILENT:
             return
+        
+        if icon == "DEBUG" and not self.DEBUG:
+            return 
+        
         super().print(message, style, icon, end)
 
 Log = Logger()

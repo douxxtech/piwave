@@ -6,9 +6,10 @@ from abc import ABC, abstractmethod
 from typing import Optional
 import subprocess
 import os
-import signal
 import shutil
 from pathlib import Path
+
+from ..logger import Log
 
 class BackendError(Exception):
     pass
@@ -63,24 +64,33 @@ class Backend(ABC):
     
     def _find_executable(self) -> str:
         # Check cache first
+        Log.debug(f"Checking cache at {self.cache_file}")
+
         if self.cache_file.exists():
             try:
                 cached_path = self.cache_file.read_text().strip()
                 if self._is_valid_executable(cached_path):
+                    Log.debug(f"Cache hit: {cached_path}")
                     return cached_path
                 else:
                     self.cache_file.unlink()
             except Exception:
                 self.cache_file.unlink(missing_ok=True)
+
+        Log.debug(f"Cache miss, searching filesystem...")
         
         # Only then search for it
         found_path = self._search_executable()
+        Log.debug(f"Found executable at: {found_path}")
+
         if found_path:
             try:
                 self.cache_file.write_text(found_path)
             except Exception:
                 pass
             return found_path
+        
+        Log.debug(f"Failed to find {self.name} on the filesystem.")
         
         raise BackendError(f"Could not find path for {self.name}. Please manually add one with python3 -m piwave add {self.name} <path>")
     
@@ -230,12 +240,16 @@ class Backend(ABC):
             raise BackendError(f"{self.name} supports {min_freq}-{max_freq}MHz, got {self.frequency}MHz")
             
         cmd = self.build_command(wav_file, loop)
+        Log.debug(f"Build command: {' '.join(cmd)}")
         self.current_process = subprocess.Popen(
             cmd,
             stdout=subprocess.DEVNULL,
             stderr=subprocess.DEVNULL,
             stdin=subprocess.DEVNULL
         )
+
+        Log.debug(f"Process PID: {self.current_process.pid}")
+
         return self.current_process
     
     def stop(self):

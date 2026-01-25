@@ -84,10 +84,12 @@ class PiWave:
         self.live_thread: Optional[threading.Thread] = None
         self.audio_queue: Optional[queue.Queue] = None
         
-        Log.config(silent=silent)
+        Log.config(silent=silent, debug=debug)
 
+        Log.debug(f"Validating environment...")
         self._validate_environment()
         
+        Log.debug(f"Discovering backends...")
         discover_backends()
 
         self.backend_use = used_for
@@ -118,6 +120,9 @@ class PiWave:
             pi=self.pi
         )
 
+        Log.debug(f"Selected backend: {backend_name}")
+
+
 
         min_freq, max_freq = self.backend.frequency_range
         rds_support = "with RDS" if self.backend.supports_rds else "no RDS"
@@ -126,11 +131,6 @@ class PiWave:
         atexit.register(self._stop_curproc)
         
         Log.info(f"PiWave initialized - Frequency: {frequency}MHz, PS: {ps}, Loop: {loop}")
-
-    def _log_debug(self, message: str):
-        if self.debug:
-            Log.print(f"[DEBUG] {message}", 'bright_cyan')
-
 
     def _validate_environment(self):
 
@@ -153,57 +153,6 @@ class PiWave:
     def _is_root(self) -> bool:
         return os.geteuid() == 0
 
-    def _find_pi_fm_rds_path(self) -> str:
-        current_dir = Path(__file__).parent
-        cache_file = current_dir / "pi_fm_rds_path"
-        
-        if cache_file.exists():
-            try:
-                cached_path = cache_file.read_text().strip()
-                if self._is_valid_executable(cached_path):
-                    return cached_path
-                else:
-                    cache_file.unlink()
-            except Exception as e:
-                Log.warning(f"Error reading cache file: {e}")
-                cache_file.unlink(missing_ok=True)
-        
-        search_paths = ["/opt", "/usr/local/bin", "/usr/bin", "/bin", "/home"]
-        
-        for search_path in search_paths:
-            if not Path(search_path).exists():
-                continue
-                
-            try:
-                for root, dirs, files in os.walk(search_path):
-                    if "pi_fm_rds" in files:
-                        executable_path = Path(root) / "pi_fm_rds"
-                        if self._is_valid_executable(str(executable_path)):
-                            cache_file.write_text(str(executable_path))
-                            return str(executable_path)
-            except (PermissionError, OSError):
-                continue
-        
-        print("Could not automatically find `pi_fm_rds`. Please enter the full path manually.")
-        user_path = input("Enter the path to `pi_fm_rds`: ").strip()
-        
-        if self._is_valid_executable(user_path):
-            cache_file.write_text(user_path)
-            return user_path
-        
-        raise PiWaveError("Invalid pi_fm_rds path provided")
-
-    def _is_valid_executable(self, path: str) -> bool:
-        try:
-            result = subprocess.run(
-                [path, "--help"], 
-                stdout=subprocess.PIPE, 
-                stderr=subprocess.PIPE, 
-                timeout=5
-            )
-            return result.returncode == 0
-        except (subprocess.CalledProcessError, subprocess.TimeoutExpired, FileNotFoundError):
-            return False
 
     def _is_wav_file(self, filepath: str) -> bool:
         return filepath.lower().endswith('.wav')
@@ -211,6 +160,7 @@ class PiWave:
 
     def _convert_to_wav(self, filepath: str) -> Optional[str]:
         if self._is_wav_file(filepath):
+            Log.debug(f"File is already WAV, skipping conversion")
             return filepath
         
         Log.file(f"Converting {filepath} to WAV")
@@ -221,8 +171,15 @@ class PiWave:
             'ffmpeg', '-i', filepath, '-acodec', 'pcm_s16le', 
             '-ar', '44100', '-ac', '2', '-y', output_file
         ]
+
+        if self.debug:
+            cmd.extend(['-v', 'debug'])
+        else:
+            cmd.extend(['-v', 'quiet'])
         
         try:
+            Log.debug(f"Starting FFmpeg conversion: {' '.join(cmd)}")
+
             subprocess.run(
                 cmd,
                 stdout=subprocess.PIPE,
@@ -231,7 +188,7 @@ class PiWave:
                 check=True
             )
             
-            self._log_debug(f"FFmpeg conversion successful for {filepath}")
+            Log.debug(f"Conversion completed: {output_file}")
             
             return output_file
             
@@ -246,11 +203,15 @@ class PiWave:
             return None
 
     def _get_file_duration(self, wav_file: str) -> float:
-        cmd = [
-            'ffprobe', '-i', wav_file, '-show_entries', 'format=duration',
-            '-v', 'quiet', '-of', 'csv=p=0'
-        ]
+        cmd = ['ffprobe', '-i', wav_file, '-show_entries', 'format=duration', '-of', 'csv=p=0']
         
+        if self.debug:
+            cmd.extend(['-v', 'debug'])
+        else:
+            cmd.extend(['-v', 'quiet'])
+
+        Log.debug(f"Running command: {' '.join(cmd)}")
+
         try:
             result = subprocess.run(
                 cmd,
@@ -422,6 +383,8 @@ class PiWave:
                     if not chunk:
                         break
                     self.audio_queue.put(chunk, timeout=1)
+                
+            Log.debug(f"Producer: sending chunk of {len(chunk)} bytes")
             
         except Exception as e:
             Log.error(f"Producer error: {e}")
@@ -438,6 +401,8 @@ class PiWave:
                     chunk = self.audio_queue.get(timeout=0.1)
                     if chunk is None:
                         break
+
+                    Log.debug(f"Consumer: queue size = {self.audio_queue.qsize()}")
                     
                     if self.current_process and self.current_process.stdin:
                         self.current_process.stdin.write(chunk)
@@ -460,7 +425,7 @@ class PiWave:
             self.is_live_streaming = False
 
     def _playback_worker(self):
-        self._log_debug("Playback worker started")
+        Log.debug("Playback worker started")
 
         if not self.current_file:
             Log.error("No file specified for playback")
@@ -483,7 +448,7 @@ class PiWave:
                 Log.error(f"Playback failed for {wav_file}")
 
         self.is_playing = False
-        self._log_debug("Playback worker finished")
+        Log.debug("Playback worker finished")
 
 
     def play(self, source, sample_rate: int = 44100, channels: int = 2, chunk_size: int = 4096, blocking: bool = False):
@@ -703,11 +668,11 @@ class PiWave:
             updated_settings.append(f"PI: {self.pi}")
         
         if debug is not None:
-            self.debug = debug
+            Log.config(silent=Log.SILENT, debug=debug)
             updated_settings.append(f"debug: {debug}")
         
         if silent is not None:
-            Log.config(silent=silent)
+            Log.config(silent=silent, debug=Log.DEBUG)
             updated_settings.append(f"silent: {silent}")
         
         if loop is not None:
