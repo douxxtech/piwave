@@ -368,6 +368,7 @@ class PiWave:
                     if self.stop_event.is_set():
                         break
                     if chunk:
+                        Log.debug(f"Producer: sending chunk of {len(chunk)} bytes")
                         self.audio_queue.put(chunk, timeout=1)
             
             elif callable(audio_source):
@@ -375,6 +376,7 @@ class PiWave:
                     chunk = audio_source()
                     if not chunk:
                         break
+                    Log.debug(f"Producer: sending chunk of {len(chunk)} bytes")
                     self.audio_queue.put(chunk, timeout=1)
             
             elif hasattr(audio_source, 'read'):
@@ -382,9 +384,8 @@ class PiWave:
                     chunk = audio_source.read(chunk_size)
                     if not chunk:
                         break
+                    Log.debug(f"Producer: sending chunk of {len(chunk)} bytes")
                     self.audio_queue.put(chunk, timeout=1)
-                
-            Log.debug(f"Producer: sending chunk of {len(chunk)} bytes")
             
         except Exception as e:
             Log.error(f"Producer error: {e}")
