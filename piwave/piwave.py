@@ -76,6 +76,7 @@ class PiWave:
         self.loop = loop
         self.on_track_change = on_track_change
         self.on_error = on_error
+        self.unsafe = unsafe
         
         self.current_file: Optional[str] = None
         self.is_playing = False
