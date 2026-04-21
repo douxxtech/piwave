@@ -6,14 +6,12 @@ import atexit
 import os
 import subprocess
 import threading
-
 import tempfile
 import shutil
 import queue
 from typing import Optional, Callable
-from pathlib import Path
 
-from .backends import discover_backends, backends, get_best_backend
+from .backends import search_backends, discover_backends, backends, get_best_backend
 from .logger import Log
 
 class PiWaveError(Exception):
@@ -30,8 +28,10 @@ class PiWave:
                 loop: bool = False,
                 backend: str = "auto",
                 used_for: str = "file_broadcast",
+                force_search: bool = False,
                 on_track_change: Optional[Callable] = None,
-                on_error: Optional[Callable] = None):
+                on_error: Optional[Callable] = None
+                ):
         """Initialize PiWave FM transmitter.
 
         :param frequency: FM frequency to broadcast on (80.0-108.0 MHz)
@@ -50,8 +50,10 @@ class PiWave:
         :type loop: bool
         :param backend: Chose a specific backend to handle the broadcast (default: auto). Supports `pi_fm_rds`, `fm_transmitter` and `auto`
         :type backend: str
-        :param backend: Give the main use for the current instance, will be used if backend: auto (default: file_broadcast). Supports `file_broadcast` and `live_broadcast`
-        :type backend: str
+        :param force_search: Give the main use for the current instance, will be used if backend: auto (default: file_broadcast). Supports `file_broadcast` and `live_broadcast`
+        :type force_search: str
+        :param force_search: Force re-scan backends ignoring cached paths (default: False)
+        :type force_search: bool
         :param on_track_change: Callback function called when track changes
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
@@ -90,7 +92,10 @@ class PiWave:
         self._validate_environment()
         
         Log.debug(f"Discovering backends...")
-        discover_backends()
+        if force_search:
+            search_backends()
+        else:
+            discover_backends()
 
         self.backend_use = used_for
 
