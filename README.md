@@ -153,6 +153,9 @@ pw = PiWave(frequency=95.0, backend="pi_fm_rds")
 
 # Extended frequency range with fm_transmitter
 pw = PiWave(frequency=150.0, backend="fm_transmitter")
+
+# Bypass RPi checks (for testing on non-RPi hardware)
+pw = PiWave(frequency=90.0, unsafe=True)
 ```
 
 ### Real-time Settings Updates
@@ -430,8 +433,10 @@ PiWave(
     loop=False,                # Loop current track continuously
     backend="auto",            # Backend selection ("auto", "pi_fm_rds", "fm_transmitter")
     used_for="file_broadcast", # Backend main purpose, used if backend = auto ("file_broadcast", "live_broadcast")
+    force_search=False,        # Force re-scan backends, ignoring cached paths
     on_track_change=None,      # Callback for track changes
-    on_error=None              # Callback for errors
+    on_error=None,             # Callback for errors
+    unsafe=False               # Bypass Raspberry Pi and root checks
 )
 ```
 
@@ -629,28 +634,33 @@ discover_backends()
 ### Common Issues
 
 1. **"No suitable backend found"**
-   ```bash
-   python3 -m piwave search  # Refresh backend cache
-   ```
+    ```bash
+    python3 -m piwave search  # Refresh backend cache
+    ```
+
+    ```python
+    # Or force re-scan on initialization
+    pw = PiWave(frequency=90.0, force_search=True)
+    ```
 
 2. **"Backend doesn't support frequency"**
-   ```python
-   # Check supported ranges
-   python3 -m piwave list
-   
-   # Use auto selection
-   pw = PiWave(frequency=your_freq, backend="auto")
-   ```
+    ```python
+    # Check supported ranges
+    python3 -m piwave list
+
+    # Use auto selection
+    pw = PiWave(frequency=your_freq, backend="auto")
+    ```
 
 3. **"Process failed to start"**
-   - Ensure running as root: `sudo python3 your_script.py`
-   - Verify backend installation: `python3 -m piwave list`
-   - Check executable permissions
+ - Ensure running as root: `sudo python3 your_script.py`
+ - Verify backend installation: `python3 -m piwave list`
+ - Check executable permissions
 
-4. **Audio conversion issues**
-   - Install FFmpeg: `sudo apt install ffmpeg`
-   - Check file format support
-   - Verify file permissions
+1. **Audio conversion issues**
+ - Install FFmpeg: `sudo apt install ffmpeg`
+ - Check file format support
+ - Verify file permissions
 
 ### Debug Mode
 
