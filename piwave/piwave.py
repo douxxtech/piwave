@@ -30,7 +30,8 @@ class PiWave:
                 used_for: str = "file_broadcast",
                 force_search: bool = False,
                 on_track_change: Optional[Callable] = None,
-                on_error: Optional[Callable] = None
+                on_error: Optional[Callable] = None,
+                unsafe: bool = False
                 ):
         """Initialize PiWave FM transmitter.
 
@@ -58,6 +59,8 @@ class PiWave:
         :type on_track_change: Optional[Callable]
         :param on_error: Callback function called when an error occurs
         :type on_error: Optional[Callable]
+        :param unsafe: Bypass Raspberry Pi and root checks (default: False)
+        :type unsafe: bool
         :raises PiWaveError: If not running on Raspberry Pi or without root privileges
         
         .. note::
@@ -142,10 +145,16 @@ class PiWave:
         #validate that we're running on a Raspberry Pi as root
 
         if not self._is_raspberry_pi():
-            raise PiWaveError("This program must be run on a Raspberry Pi")
+            if not self.unsafe:
+                raise PiWaveError("This program must be run on a Raspberry Pi")
+            else:
+                Log.warning("We aren't running on a Raspberry Pi")
         
         if not self._is_root():
-            raise PiWaveError("This program must be run as root")
+            if not self.unsafe:
+                raise PiWaveError("This program must be run as root")
+            else:
+                Log.warning("We aren't running as root")
 
     def _is_raspberry_pi(self) -> bool:
         try:
