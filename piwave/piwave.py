@@ -51,8 +51,8 @@ class PiWave:
         :type loop: bool
         :param backend: Chose a specific backend to handle the broadcast (default: auto). Supports `pi_fm_rds`, `fm_transmitter` and `auto`
         :type backend: str
-        :param force_search: Give the main use for the current instance, will be used if backend: auto (default: file_broadcast). Supports `file_broadcast` and `live_broadcast`
-        :type force_search: str
+        :param used_for: Give the main use for the current instance, will be used if backend: auto (default: file_broadcast). Supports `file_broadcast` and `live_broadcast`
+        :type used_for: str
         :param force_search: Force re-scan backends ignoring cached paths (default: False)
         :type force_search: bool
         :param on_track_change: Callback function called when track changes

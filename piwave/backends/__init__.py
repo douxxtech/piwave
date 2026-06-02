@@ -85,7 +85,7 @@ def search_backends():
         backend = backend_class()
 
         try:
-            available = backend.is_available()
+            available = backend.is_available(force=True)
         except Exception:
             available = False
 

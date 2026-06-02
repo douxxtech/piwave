@@ -62,18 +62,22 @@ class Backend(ABC):
         self._executable_path = self._find_executable()
         return self._executable_path
     
-    def _find_executable(self) -> str:
+    def _find_executable(self, force: bool = False) -> str:
         # Check cache first
         Log.debug(f"Checking cache at {self.cache_file}")
 
         if self.cache_file.exists():
             try:
-                cached_path = self.cache_file.read_text().strip()
-                if self._is_valid_executable(cached_path):
-                    Log.debug(f"Cache hit: {cached_path}")
-                    return cached_path
+                if force:
+                    Log.debug(f"Force search enabled, unlinking old cache.")
+                    self.cache_file.unlink(missing_ok=True)
                 else:
-                    self.cache_file.unlink()
+                    cached_path = self.cache_file.read_text().strip()
+                    if self._is_valid_executable(cached_path):
+                        Log.debug(f"Cache hit: {cached_path}")
+                        return cached_path
+                    else:
+                        self.cache_file.unlink()
             except Exception:
                 self.cache_file.unlink(missing_ok=True)
 
@@ -210,12 +214,17 @@ class Backend(ABC):
     # valid executable part end
 
 
-    def is_available(self):
-        if self.is_available_cached is not None:
+    def is_available(self, force: bool = False):
+        if not force and self.is_available_cached is not None:
             return self.is_available_cached
             
         try:
-            self.required_executable
+            # Pass force flag down to the executable searcher
+            if force:
+                self._executable_path = self._find_executable(force=True)
+            else:
+                self.required_executable
+                
             self.is_available_cached = True
             return True
         except BackendError:
