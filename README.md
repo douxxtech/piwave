@@ -61,7 +61,7 @@ To use PiWave for broadcasting, you need to set up the hardware correctly:
 Use the automated installer script:
 
 ```bash
-curl -sL https://setup.piwave.xyz/ | sudo bash
+curl -sL https://piwave.douxx.tech/install | sudo bash
 ```
 
 This installs PiWave dependencies and the PiFmRds backend automatically.
@@ -70,16 +70,16 @@ This installs PiWave dependencies and the PiFmRds backend automatically.
 
 ```bash
 # Install with fm_transmitter backend (may affect system stability)
-curl -sL https://setup.piwave.xyz/ | sudo bash -s -- --install_fmt
+curl -sL https://piwave.douxx.tech/install | sudo bash -s -- --install_fmt
 
 # Skip confirmation prompts
-curl -sL https://setup.piwave.xyz/ | sudo bash -s -- --install_fmt --no-wait
+curl -sL https://piwave.douxx.tech/install | sudo bash -s -- --install_fmt --no-wait
 ```
 
 #### Uninstallation
 
 ```bash
-curl -sL https://setup.piwave.xyz/uninstall | sudo bash
+curl -sL https://piwave.douxx.tech/uninstall | sudo bash
 ```
 
 ### Manual Installation
